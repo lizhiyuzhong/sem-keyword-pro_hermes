@@ -53,11 +53,12 @@ B2C 客户，以下情况判定 **fail**：
 | score | int 0-100 | dim1 fail: 0-20, dim2 fail: 20-40, dim3 fail: 40-60, 全pass: 80-100 |
 | suggestion | "保留"/"排除" | dim1-3 全 pass → 保留，否则 → 排除 |
 | excludeReason | string | **必须非空**。排除时以【维度N-标签】开头 + 一句独立理由。保留时写明三维均通过。 |
-| extractedNegative | string/null | 排除时提取核心词根，保留时 null |
 | negativeCategory | string/null | 5 选 1：竞对公司词 / 无关业务/产品词 / C端个人消费词 / 纯信息/学术词 / 触发偏移词 |
 | dim1 | {status, reason} | 维度 1 独立评定。status: pass/fail/na |
 | dim2 | {status, reason} | 维度 2 独立评定。status: pass/fail/na |
 | dim3 | {status, reason} | 维度 3 独立评定。status: pass/fail/na |
+
+> **注意**：无需输出 `extractedNegative` 字段。词根提取将由后续专门步骤完成。
 
 ---
 
@@ -80,7 +81,6 @@ B2C 客户，以下情况判定 **fail**：
       "score": 10,
       "suggestion": "排除",
       "excludeReason": "【维度1-受众偏差】该搜索词明确为个人 DIY 手工制作意图，属于 C 端消费场景，不符合 B2B 企业采购定位。",
-      "extractedNegative": "build at home",
       "negativeCategory": "C端个人消费词",
       "dim1": {"status": "fail", "reason": "搜索词含 'build at home' 和 'how to'，是典型个人 DIY 教程查询，受众为 C 端消费者，严重不符合 B2B 企业采购场景。"},
       "dim2": {"status": "na", "reason": "已短路跳过"},

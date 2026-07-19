@@ -236,7 +236,7 @@ async function analyzeSearchTermsBatch(
 }
 
 // ---------------------------------------------------------------------------
-// High-level negative keyword group extraction (max 5 categories)
+// High-level negative keyword group extraction (LLM-powered)
 // ---------------------------------------------------------------------------
 interface NegativeGroup {
   category: string;
@@ -244,50 +244,99 @@ interface NegativeGroup {
   terms: string[];
 }
 
-function extractNegativeGroups(excluded: SearchTermAnalysis[]): NegativeGroup[] {
+async function extractSearchTermNegatives(
+  excluded: SearchTermAnalysis[],
+  businessDirection: string,
+  businessType: BusinessType,
+  model?: string
+): Promise<NegativeGroup[]> {
   if (excluded.length === 0) return [];
 
-  // Group by negativeCategory
-  const byCategory = new Map<string, SearchTermAnalysis[]>();
-  for (const r of excluded) {
-    const cat = r.negativeCategory || "无关业务/产品词";
-    if (!byCategory.has(cat)) byCategory.set(cat, []);
-    byCategory.get(cat)!.push(r);
-  }
+  // Build a compact list of excluded terms with their categories
+  const termList = excluded
+    .map((r) => `"${r.term}" [${r.negativeCategory || "无关"}]`)
+    .join("\n");
 
-  const CATEGORY_DESC: Record<string, string> = {
-    "竞对公司词": "搜索词包含竞争对手公司名或品牌名，建议全部加入否词",
-    "无关业务/产品词": "搜索词属于完全不同行业或产品类别，与客户业务无关",
-    "C端个人消费词": "个人零售、家用、DIY 等 C 端意图，不符合 B2B 定位",
-    "纯信息/学术词": "纯资讯、百科、学术查询，无商业转化意图",
-    "触发偏移词": "与触发关键字存在语义偏移或越级触发，匹配错误",
-  };
+  try {
+    const response = await invokeLLM({
+      modelOverride: model,
+      messages: [
+        {
+          role: "system",
+          content: "你是一位资深的 SEM 否词策略分析师。请严格按照 JSON 格式返回结果，所有文字使用中文。",
+        },
+        {
+          role: "user",
+          content: `以下是 ${excluded.length} 个被建议排除的搜索词及其诊断分类：
 
-  // Priority order for display
-  const ORDER = ["竞对公司词", "无关业务/产品词", "C端个人消费词", "纯信息/学术词", "触发偏移词"];
+客户业务方向：${businessDirection}
+客户业务类型：${businessType}
 
-  const groups: NegativeGroup[] = [];
-  for (const cat of ORDER) {
-    const items = byCategory.get(cat);
-    if (!items || items.length === 0) continue;
+排除词列表：
+${termList}
 
-    // Collect unique extracted terms, deduplicate, limit to 20 per group
-    const termSet = new Set<string>();
-    for (const item of items) {
-      if (item.extractedNegative && typeof item.extractedNegative === "string") {
-        const cleaned = item.extractedNegative.trim().toLowerCase();
-        if (cleaned.length > 1) termSet.add(cleaned);
-      }
-    }
+请从这些排除词中提取高层次的**共性词根**，按以下 5 个类别分组输出。每个类别提取最具代表性的词根（去重后每类最多 15 个词根）。
 
-    groups.push({
-      category: cat,
-      description: CATEGORY_DESC[cat] || "",
-      terms: Array.from(termSet).slice(0, 20),
+5 个类别：
+1. 竞对公司词 — 包含竞争对手公司名或品牌名
+2. 无关业务/产品词 — 属于完全不同行业或产品类别
+3. C端个人消费词 — 个人零售、家用、DIY 等 C 端意图（B2B 客户专用）
+4. 纯信息/学术词 — 纯资讯、百科、学术查询，无转化意图
+5. 触发偏移词 — 与触发关键字存在语义偏移或越级触发
+
+重要规则：
+- 提取词根而非完整搜索词（如从"solar panel installation cost"提取"solar panel"）
+- 严禁翻译：英文词必须保持英文，中文词必须保持中文
+- 去重：同一类别的词根不应重复
+- 只输出有实际词根的类别，空类别不输出
+
+返回 JSON 格式：
+{"groups":[{"category":"竞对公司词","description":"一句话说明","terms":["root1","root2"]},...]}`,
+        },
+      ],
+      response_format: {
+        type: "json_schema",
+        json_schema: {
+          name: "search_term_negatives",
+          strict: true,
+          schema: {
+            type: "object",
+            properties: {
+              groups: {
+                type: "array",
+                items: {
+                  type: "object",
+                  properties: {
+                    category: { type: "string" },
+                    description: { type: "string" },
+                    terms: { type: "array", items: { type: "string" } },
+                  },
+                  required: ["category", "description", "terms"],
+                  additionalProperties: false,
+                },
+              },
+            },
+            required: ["groups"],
+            additionalProperties: false,
+          },
+        },
+      },
     });
-  }
 
-  return groups;
+    const content = response.choices[0]?.message?.content;
+    const parsed = typeof content === "string" ? JSON.parse(content) : JSON.parse((content as any)?.[0]?.text || '{"groups":[]}');
+    const groups: NegativeGroup[] = (parsed.groups || [])
+      .filter((g: any) => Array.isArray(g.terms) && g.terms.length > 0)
+      .map((g: any) => ({
+        category: g.category || "无关业务/产品词",
+        description: g.description || "",
+        terms: (g.terms as string[]).filter((t: any) => typeof t === "string" && t.trim().length > 0).slice(0, 15),
+      }));
+    return groups;
+  } catch (error) {
+    console.error("[SearchTermNegatives] LLM extraction failed:", error);
+    return [];
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -455,9 +504,14 @@ export const searchTermRouter = router({
       }
 
       // -----------------------------------------------------------------------
-      // Post-analysis: extract high-level negative keyword groups (max 5 categories)
+      // Post-analysis: extract high-level negative keyword groups via LLM
       // -----------------------------------------------------------------------
-      const negativeGroups = extractNegativeGroups(freshResults.filter(r => r.suggestion === "排除"));
+      const negativeGroups = await extractSearchTermNegatives(
+        freshResults.filter(r => r.suggestion === "排除"),
+        businessDirection,
+        businessType,
+        model
+      );
 
       // -----------------------------------------------------------------------
       // Merge: historical + fresh, preserving input order
