@@ -1,0 +1,38 @@
+import { Toaster } from "@/components/ui/sonner";
+import { TooltipProvider } from "@/components/ui/tooltip";
+import NotFound from "@/pages/NotFound";
+import { Route, Switch } from "wouter";
+import ErrorBoundary from "./components/ErrorBoundary";
+import { ThemeProvider } from "./contexts/ThemeContext";
+import { EmailGuard } from "./components/EmailGuard";
+import Home from "./pages/Home";
+import Admin from "./pages/Admin";
+import Clients from "./pages/Clients";
+
+function Router() {
+  return (
+    <Switch>
+      <Route path={"/"} component={Home} />
+      <Route path={"/clients"} component={Clients} />
+      <Route path={"/admin"} component={Admin} />
+      <Route path={"/404"} component={NotFound} />
+      <Route component={NotFound} />
+    </Switch>
+  );
+}
+
+function App() {
+  return (
+    <ErrorBoundary>
+      <ThemeProvider defaultTheme="light">
+        <TooltipProvider>
+          <Toaster />
+          <EmailGuard />
+          <Router />
+        </TooltipProvider>
+      </ThemeProvider>
+    </ErrorBoundary>
+  );
+}
+
+export default App;

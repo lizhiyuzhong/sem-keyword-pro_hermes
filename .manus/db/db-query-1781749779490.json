@@ -1,0 +1,9 @@
+{
+  "query": "ALTER TABLE `users` ADD `daily_keyword_count` int DEFAULT 0 NOT NULL;\nALTER TABLE `users` ADD `daily_keyword_limit` int DEFAULT 1000 NOT NULL;\nALTER TABLE `users` ADD `last_reset_date` varchar(10);",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 46ouL42PjsWzDLX.root --database e4jZXCizzzxeKyPdyVA9W3 --execute ALTER TABLE `users` ADD `daily_keyword_count` int DEFAULT 0 NOT NULL;\nALTER TABLE `users` ADD `daily_keyword_limit` int DEFAULT 1000 NOT NULL;\nALTER TABLE `users` ADD `last_reset_date` varchar(10);",
+  "rows": [],
+  "messages": [],
+  "stdout": "",
+  "stderr": "",
+  "execution_time_ms": 836
+}

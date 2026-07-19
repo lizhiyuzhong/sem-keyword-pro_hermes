@@ -1,0 +1,17 @@
+E2E Test Final Notes:
+
+1. Analysis works correctly - LLM search simulation provides realistic results
+2. Keyword detail expansion works - shows analysis reasoning, Google search results, and search summary
+3. "业务类型 匹配" and "业务方向 匹配" tags display correctly for matching keywords
+4. Google search results show with clickable links (external link icon)
+5. Search results summary text displayed at bottom of each keyword detail
+6. "建议保留" section shows 2 keywords with green confidence bars
+7. "建议排除" section shows 1 keyword with red confidence bar
+8. Copy buttons visible for both sections
+9. Footer not visible yet - need to scroll more
+10. Issue: The footer might be missing from the current view
+
+Need to check:
+- Footer visibility
+- "修改条件" button functionality
+- Copy button functionality

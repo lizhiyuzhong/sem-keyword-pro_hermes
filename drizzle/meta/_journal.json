@@ -1,0 +1,55 @@
+{
+  "version": "7",
+  "dialect": "mysql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "5",
+      "when": 1773718653649,
+      "tag": "0000_sad_harry_osborn",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "5",
+      "when": 1776415186389,
+      "tag": "0001_dry_kat_farrell",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "5",
+      "when": 1776764895139,
+      "tag": "0002_mixed_fixer",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "5",
+      "when": 1780633625185,
+      "tag": "0003_crazy_polaris",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "5",
+      "when": 1781233423307,
+      "tag": "0004_clear_nomad",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "5",
+      "when": 1781749772726,
+      "tag": "0005_supreme_punisher",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "5",
+      "when": 1782702078740,
+      "tag": "0006_concerned_firebird",
+      "breakpoints": true
+    }
+  ]
+}

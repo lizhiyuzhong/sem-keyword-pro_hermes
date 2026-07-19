@@ -1,0 +1,2 @@
+ALTER TABLE `client_keyword_history` ADD `matchedKeyword` varchar(500);--> statement-breakpoint
+ALTER TABLE `client_keyword_history` ADD CONSTRAINT `idx_ckh_unique` UNIQUE(`clientId`,`keyword`,`matchedKeyword`);

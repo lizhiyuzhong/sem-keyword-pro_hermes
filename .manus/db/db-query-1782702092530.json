@@ -1,0 +1,9 @@
+{
+  "query": "ALTER TABLE `client_keyword_history` ADD `matchedKeyword` varchar(500);\nALTER TABLE `client_keyword_history` ADD CONSTRAINT `idx_ckh_unique` UNIQUE(`clientId`,`keyword`,`matchedKeyword`);",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 46ouL42PjsWzDLX.root --database e4jZXCizzzxeKyPdyVA9W3 --execute ALTER TABLE `client_keyword_history` ADD `matchedKeyword` varchar(500);\nALTER TABLE `client_keyword_history` ADD CONSTRAINT `idx_ckh_unique` UNIQUE(`clientId`,`keyword`,`matchedKeyword`);",
+  "rows": [],
+  "messages": [],
+  "stdout": "",
+  "stderr": "",
+  "execution_time_ms": 1882
+}

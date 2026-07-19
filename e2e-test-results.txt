@@ -1,0 +1,12 @@
+E2E Test Results - Round 2 (after fixes):
+
+1. Form input works correctly
+2. Analysis completed successfully with LLM-based search simulation
+3. Results correctly categorized:
+   - "建议保留": industrial automation (95%), PLC controller (95%)
+   - "建议排除": baby toys (100%)
+4. Form collapsed after analysis with summary bar showing at top
+5. Summary card shows clean text (no markdown artifacts)
+6. Confidence bars display correctly with green/red colors
+7. Copy buttons visible for both keep and exclude sections
+8. Need to check: footer visibility, keyword detail expand, copy functionality

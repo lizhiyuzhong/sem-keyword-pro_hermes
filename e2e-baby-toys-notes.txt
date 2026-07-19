@@ -1,0 +1,10 @@
+Baby Toys Detail Analysis:
+- Tags show "业务类型 不匹配" and "业务方向 不匹配" in red
+- Analysis reasoning correctly identifies B2C consumer product vs B2B industrial
+- Google search results show Amazon, Target, Walmart, Parents, What to Expect - all consumer sites
+- Search summary correctly states results point to B2C retail platforms
+- 100% confidence for exclusion
+
+Footer Issue:
+- Footer not visible at bottom of page - need to add it
+- Should show "2026 SEM Keyword Pro. Powered by Manus" and "Daniel LI"

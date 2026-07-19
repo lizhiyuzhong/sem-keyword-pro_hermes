@@ -1,0 +1,1 @@
+ALTER TABLE `analysis_cache` MODIFY COLUMN `reportJson` mediumtext NOT NULL;

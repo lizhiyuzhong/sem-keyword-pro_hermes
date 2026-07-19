@@ -1,0 +1,17 @@
+{
+  "query": "SELECT id, openId, name, email, role FROM users WHERE email = 'lizhiyuzhong930@gmail.com';",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 46ouL42PjsWzDLX.root --database e4jZXCizzzxeKyPdyVA9W3 --execute SELECT id, openId, name, email, role FROM users WHERE email = 'lizhiyuzhong930@gmail.com';",
+  "rows": [
+    {
+      "id": "1",
+      "openId": "fqv7W8v6gy8c7qsWsR86Aq",
+      "name": "陈墨瞳",
+      "email": "lizhiyuzhong930@gmail.com",
+      "role": "admin"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\topenId\tname\temail\trole\n1\tfqv7W8v6gy8c7qsWsR86Aq\t陈墨瞳\tlizhiyuzhong930@gmail.com\tadmin\n",
+  "stderr": "",
+  "execution_time_ms": 364
+}

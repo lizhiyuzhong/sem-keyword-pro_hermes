@@ -1,0 +1,9 @@
+UI Screenshot Notes:
+- Header: SEM Keyword Pro with blue search icon - looks good
+- Hero: "智能关键词筛选" title with subtitle - clean
+- Form: Glass card with 3 fields - business direction, type toggle (B2B/B2C), keywords textarea
+- B2B button is active (blue), B2C is inactive (gray) - good
+- Submit button: "开始智能分析" with sparkles icon - good
+- Background: subtle gradient - apple-like feel
+- Footer not visible in screenshot - need to scroll
+- Overall: Clean, Apple-inspired design achieved

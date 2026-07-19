@@ -1,0 +1,58 @@
+{
+  "query": "DESCRIBE client_keyword_history;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 46ouL42PjsWzDLX.root --database e4jZXCizzzxeKyPdyVA9W3 --execute DESCRIBE client_keyword_history;",
+  "rows": [
+    {
+      "Field": "id",
+      "Type": "int",
+      "Null": "NO",
+      "Key": "PRI",
+      "Default": "NULL",
+      "Extra": "auto_increment"
+    },
+    {
+      "Field": "clientId",
+      "Type": "int",
+      "Null": "NO",
+      "Key": "MUL",
+      "Default": "NULL",
+      "Extra": ""
+    },
+    {
+      "Field": "keyword",
+      "Type": "varchar(500)",
+      "Null": "NO",
+      "Key": "",
+      "Default": "NULL",
+      "Extra": ""
+    },
+    {
+      "Field": "analysisResultJson",
+      "Type": "mediumtext",
+      "Null": "NO",
+      "Key": "",
+      "Default": "NULL",
+      "Extra": ""
+    },
+    {
+      "Field": "analyzedAt",
+      "Type": "bigint",
+      "Null": "NO",
+      "Key": "",
+      "Default": "NULL",
+      "Extra": ""
+    },
+    {
+      "Field": "matchedKeyword",
+      "Type": "varchar(500)",
+      "Null": "YES",
+      "Key": "",
+      "Default": "NULL",
+      "Extra": ""
+    }
+  ],
+  "messages": [],
+  "stdout": "Field\tType\tNull\tKey\tDefault\tExtra\nid\tint\tNO\tPRI\tNULL\tauto_increment\nclientId\tint\tNO\tMUL\tNULL\t\nkeyword\tvarchar(500)\tNO\t\tNULL\t\nanalysisResultJson\tmediumtext\tNO\t\tNULL\t\nanalyzedAt\tbigint\tNO\t\tNULL\t\nmatchedKeyword\tvarchar(500)\tYES\t\tNULL\t\n",
+  "stderr": "",
+  "execution_time_ms": 379
+}

@@ -1,0 +1,9 @@
+{
+  "query": "\nCREATE TABLE `client_keyword_history` (\n\t`id` int AUTO_INCREMENT NOT NULL,\n\t`clientId` int NOT NULL,\n\t`keyword` varchar(500) NOT NULL,\n\t`analysisResultJson` mediumtext NOT NULL,\n\t`analyzedAt` bigint NOT NULL,\n\tCONSTRAINT `client_keyword_history_id` PRIMARY KEY(`id`)\n);\n\nCREATE TABLE `clients` (\n\t`id` int AUTO_INCREMENT NOT NULL,\n\t`userId` int NOT NULL,\n\t`name` varchar(255) NOT NULL,\n\t`businessDirection` text NOT NULL,\n\t`businessType` enum('B2B','B2C') NOT NULL,\n\t`createdAt` timestamp NOT NULL DEFAULT (now()),\n\t`updatedAt` timestamp NOT NULL DEFAULT (now()) ON UPDATE CURRENT_TIMESTAMP,\n\tCONSTRAINT `clients_id` PRIMARY KEY(`id`)\n);\n\nCREATE INDEX `idx_ckh_clientId` ON `client_keyword_history` (`clientId`);\n\nCREATE INDEX `idx_clients_userId` ON `clients` (`userId`);\n",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 46ouL42PjsWzDLX.root --database e4jZXCizzzxeKyPdyVA9W3 --execute \nCREATE TABLE `client_keyword_history` (\n\t`id` int AUTO_INCREMENT NOT NULL,\n\t`clientId` int NOT NULL,\n\t`keyword` varchar(500) NOT NULL,\n\t`analysisResultJson` mediumtext NOT NULL,\n\t`analyzedAt` bigint NOT NULL,\n\tCONSTRAINT `client_keyword_history_id` PRIMARY KEY(`id`)\n);\n\nCREATE TABLE `clients` (\n\t`id` int AUTO_INCREMENT NOT NULL,\n\t`userId` int NOT NULL,\n\t`name` varchar(255) NOT NULL,\n\t`businessDirection` text NOT NULL,\n\t`businessType` enum('B2B','B2C') NOT NULL,\n\t`createdAt` timestamp NOT NULL DEFAULT (now()),\n\t`updatedAt` timestamp NOT NULL DEFAULT (now()) ON UPDATE CURRENT_TIMESTAMP,\n\tCONSTRAINT `clients_id` PRIMARY KEY(`id`)\n);\n\nCREATE INDEX `idx_ckh_clientId` ON `client_keyword_history` (`clientId`);\n\nCREATE INDEX `idx_clients_userId` ON `clients` (`userId`);\n",
+  "rows": [],
+  "messages": [],
+  "stdout": "",
+  "stderr": "",
+  "execution_time_ms": 994
+}

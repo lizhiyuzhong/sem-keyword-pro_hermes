@@ -1,0 +1,9 @@
+{
+  "query": "DELETE FROM client_keyword_history WHERE matchedKeyword IS NOT NULL AND matchedKeyword != '';",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 46ouL42PjsWzDLX.root --database e4jZXCizzzxeKyPdyVA9W3 --execute DELETE FROM client_keyword_history WHERE matchedKeyword IS NOT NULL AND matchedKeyword != '';",
+  "rows": [],
+  "messages": [],
+  "stdout": "",
+  "stderr": "",
+  "execution_time_ms": 465
+}

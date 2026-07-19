@@ -1,0 +1,11 @@
+E2E Test Results:
+1. Form input works correctly - business direction, type toggle, keywords textarea
+2. Analysis completed successfully despite Google Search API returning 404 (fallback to LLM-only analysis works)
+3. Results correctly categorized: "industrial automation" and "PLC controller" as "建议保留", "baby toys" as "建议排除"
+4. Form collapsed after analysis with summary bar showing
+5. Summary card shows analysis overview with keep/exclude counts
+6. Confidence bars display correctly (95% for keep, 100% for exclude)
+7. Two issues to fix:
+   a. Summary text shows raw markdown (**bold**) instead of rendered - need to use Streamdown component
+   b. Google Search API needs fixing - "Google/search" returns 404, need to find correct API ID
+   c. Footer not visible - need to scroll down to check
