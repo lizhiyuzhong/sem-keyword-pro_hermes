@@ -1,5 +1,6 @@
 import "dotenv/config";
 import express from "express";
+import path from "path";
 import { createServer } from "http";
 import net from "net";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
@@ -43,6 +44,11 @@ async function startServer() {
       createContext,
     })
   );
+
+  // Serve project docs (.hermes/) at /docs
+  const docsDir = path.resolve(import.meta.dirname, "../../.hermes");
+  app.use("/docs", express.static(docsDir));
+
   // development mode uses Vite, production mode uses static files
   if (process.env.NODE_ENV === "development") {
     await setupVite(app, server);
@@ -59,6 +65,7 @@ async function startServer() {
 
   server.listen(port, () => {
     console.log(`Server running on http://localhost:${port}/`);
+    console.log(`Docs at http://localhost:${port}/docs/`);
   });
 }
 
