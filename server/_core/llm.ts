@@ -109,6 +109,8 @@ export type InvokeParams = {
   output_schema?: OutputSchema;
   responseFormat?: ResponseFormat;
   response_format?: ResponseFormat;
+  /** Per-request model override. Uses LLM_MODEL env if not set. */
+  modelOverride?: string;
 };
 
 export type ToolCall = {
@@ -281,8 +283,12 @@ const resolveApiKey = (): string => {
   return ENV.forgeApiKey;
 };
 
-const resolveModel = (): string => {
+const resolveModel = (override?: string): string => {
+  // Request-level override takes priority
+  if (override && override.trim().length > 0) return override.trim();
+  // Then env config
   if (ENV.llmModel && ENV.llmModel.trim().length > 0) return ENV.llmModel;
+  // Default
   return "gemini-2.5-flash";
 };
 
@@ -355,9 +361,10 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
     output_schema,
     responseFormat,
     response_format,
+    modelOverride,
   } = params;
 
-  const model = resolveModel();
+  const model = resolveModel(modelOverride);
 
   const payload: Record<string, unknown> = {
     model,

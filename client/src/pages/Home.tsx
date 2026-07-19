@@ -69,6 +69,7 @@ export default function Home() {
 
   const [businessDirection, setBusinessDirection] = useState("");
   const [businessType, setBusinessType] = useState<"B2B" | "B2C">("B2B");
+  const [model, setModel] = useState<string>("deepseek-v4-flash");
   const [keywordInput, setKeywordInput] = useState("");
   // Persist report in sessionStorage to survive HMR / page reconnects
   // The stored value is wrapped with the clientId so we can discard stale reports
@@ -286,6 +287,7 @@ export default function Home() {
         businessDirection: businessDirection.trim(),
         businessType,
         keywords,
+        model,
         clientId: opts?.clientId,
         saveAsClient: opts?.saveAsClient,
       });
@@ -944,6 +946,32 @@ export default function Home() {
                             <span className="text-xs ml-1 opacity-70">
                               {type === "B2B" ? "企业端" : "消费端"}
                             </span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Model Selector */}
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium text-foreground">
+                        AI 模型
+                      </label>
+                      <div className="flex gap-2">
+                        {([
+                          { id: "deepseek-v4-flash", label: "Flash", desc: "快速·省 Token" },
+                          { id: "deepseek-v4-pro", label: "Pro", desc: "高精度" },
+                        ] as const).map((opt) => (
+                          <button
+                            key={opt.id}
+                            onClick={() => setModel(opt.id)}
+                            className={`flex-1 py-2.5 px-4 rounded-xl text-sm font-medium transition-all ${
+                              model === opt.id
+                                ? "bg-primary text-primary-foreground shadow-md shadow-primary/20"
+                                : "bg-secondary/50 text-muted-foreground hover:bg-secondary hover:text-foreground border border-border/50"
+                            }`}
+                          >
+                            {opt.label}
+                            <span className="text-xs ml-1 opacity-70">{opt.desc}</span>
                           </button>
                         ))}
                       </div>

@@ -35,7 +35,8 @@ try {
 async function analyzeSearchTermsBatch(
   terms: Array<{ term: string; matchedKeyword: string }>,
   businessDirection: string,
-  businessType: BusinessType
+  businessType: BusinessType,
+  model?: string
 ): Promise<SearchTermAnalysis[]> {
   const searchTermsData = JSON.stringify(terms, null, 2);
 
@@ -59,6 +60,7 @@ async function analyzeSearchTermsBatch(
         additionalProperties: false,
       };
       response = await invokeLLM({
+        modelOverride: model,
         messages: [
           {
             role: "system",
@@ -323,10 +325,13 @@ export const searchTermRouter = router({
           )
           .min(1, "请至少提供一个搜索字词")
           .max(100, "单次最多分析 100 个搜索字词"),
+        /** Per-request model override */
+        model: z.string().optional(),
       })
     )
     .mutation(async ({ ctx, input }) => {
       const { businessDirection, businessType, clientId, searchTerms } = input;
+      const { model } = input;
 
       // Reset token tracker for this request
       TokenTracker.reset();
@@ -377,7 +382,8 @@ export const searchTermRouter = router({
         const batchResults = await analyzeSearchTermsBatch(
           batch,
           businessDirection,
-          businessType
+          businessType,
+          model
         );
         freshResults.push(...batchResults);
       }

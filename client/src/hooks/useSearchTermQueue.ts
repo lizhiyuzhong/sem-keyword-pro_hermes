@@ -26,6 +26,8 @@ export interface QueueState {
   businessDirection: string;
   businessType: "B2B" | "B2C";
   clientId: number | null;
+  /** Per-request model override */
+  model: string;
   /** Skipped count from last batch (L2 dedup) */
   lastSkippedCount: number;
 }
@@ -44,6 +46,7 @@ const initialState: QueueState = {
   businessDirection: "",
   businessType: "B2B",
   clientId: null,
+  model: "deepseek-v4-flash",
   lastSkippedCount: 0,
 };
 
@@ -198,6 +201,7 @@ export function useSearchTermQueue(): UseSearchTermQueueReturn {
         businessDirection,
         businessType,
         clientId,
+        model: "deepseek-v4-flash",
         lastSkippedCount: 0,
       }));
     },
@@ -210,6 +214,7 @@ export function useSearchTermQueue(): UseSearchTermQueueReturn {
         businessDirection: string;
         businessType: "B2B" | "B2C";
         clientId: number;
+        model?: string;
         searchTerms: Array<{ term: string; matchedKeyword: string }>;
       }) => Promise<SearchTermReport & { dailyKeywordCount: number; dailyKeywordLimit: number }>
     ) => {
@@ -230,6 +235,7 @@ export function useSearchTermQueue(): UseSearchTermQueueReturn {
           businessDirection: current.businessDirection,
           businessType: current.businessType,
           clientId: current.clientId,
+          model: current.model,
           searchTerms: batch.map((r) => ({
             term: r.term,
             matchedKeyword: r.matchedKeyword,

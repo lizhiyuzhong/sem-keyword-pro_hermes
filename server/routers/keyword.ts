@@ -22,7 +22,8 @@ import type {
 async function analyzeKeywordSemantics(
   keyword: string,
   businessDirection: string,
-  businessType: BusinessType
+  businessType: BusinessType,
+  model?: string
 ): Promise<KeywordAnalysis> {
   const targetAudience = businessType === "B2B" ? "企业/B端客户" : "个人消费者/C端用户";
   const audienceCheck =
@@ -49,88 +50,71 @@ async function analyzeKeywordSemantics(
 
 重要：reasoning 和 searchSummary 字段必须使用中文撰写，不得使用英文。`;
 
-  try {
-    const response = await invokeLLM({
-      messages: [
-        {
-          role: "system",
-          content:
-            "你是一位专业的 SEM 关键词语义分析师。请严格按照 JSON 格式返回分析结果，不要包含任何其他文字或 markdown 标记。所有文字字段（reasoning、searchSummary）必须使用中文撰写，禁止使用英文。",
+  const systemMsg = {
+    role: "system" as const,
+    content:
+      "你是一位专业的 SEM 关键词语义分析师。请严格按照 JSON 格式返回分析结果，不要包含任何其他文字或 markdown 标记。所有文字字段（reasoning、searchSummary）必须使用中文撰写，禁止使用英文。",
+  };
+  const userMsg = { role: "user" as const, content: prompt };
+  const respFmt = {
+    type: "json_schema" as const,
+    json_schema: {
+      name: "keyword_analysis",
+      strict: true,
+      schema: {
+        type: "object",
+        properties: {
+          searchSummary: { type: "string", description: "基于语义知识对该关键词典型搜索场景的总结（中文，50字以内）" },
+          recommendation: { type: "string", enum: ["keep", "exclude"] },
+          businessTypeMatch: { type: "boolean" },
+          businessDirectionMatch: { type: "boolean" },
+          confidence: { type: "integer", description: "置信度 0-100" },
+          reasoning: { type: "string", description: "详细的中文分析理由" },
         },
-        { role: "user", content: prompt },
-      ],
-      response_format: {
-        type: "json_schema",
-        json_schema: {
-          name: "keyword_analysis",
-          strict: true,
-          schema: {
-            type: "object",
-            properties: {
-              searchSummary: {
-                type: "string",
-                description: "基于语义知识对该关键词典型搜索场景的总结（中文，50字以内）",
-              },
-              recommendation: { type: "string", enum: ["keep", "exclude"] },
-              businessTypeMatch: { type: "boolean" },
-              businessDirectionMatch: { type: "boolean" },
-              confidence: {
-                type: "integer",
-                description: "置信度 0-100，反映分析的确定性",
-              },
-              reasoning: {
-                type: "string",
-                description: "详细的中文分析理由，说明匹配或不匹配的原因",
-              },
-            },
-            required: [
-              "searchSummary",
-              "recommendation",
-              "businessTypeMatch",
-              "businessDirectionMatch",
-              "confidence",
-              "reasoning",
-            ],
-            additionalProperties: false,
-          },
-        },
+        required: ["searchSummary","recommendation","businessTypeMatch","businessDirectionMatch","confidence","reasoning"],
+        additionalProperties: false,
       },
-    });
+    },
+  };
 
+  const doCall = async () => invokeLLM({ modelOverride: model, messages: [systemMsg, userMsg], response_format: respFmt });
+
+  const parseResult = (response: Awaited<ReturnType<typeof invokeLLM>>): KeywordAnalysis => {
     const content = response.choices[0]?.message?.content;
-    const parsed =
-      typeof content === "string"
-        ? JSON.parse(content)
-        : JSON.parse((content as any)?.[0]?.text || "{}");
-
-    // Enforce AND logic: both must be true for "keep"
-    const businessTypeMatch = Boolean(parsed.businessTypeMatch);
-    const businessDirectionMatch = Boolean(parsed.businessDirectionMatch);
-    const recommendation: Recommendation =
-      businessTypeMatch && businessDirectionMatch ? "keep" : "exclude";
-
+    const parsed = typeof content === "string" ? JSON.parse(content) : JSON.parse((content as any)?.[0]?.text || "{}");
+    const bt = Boolean(parsed.businessTypeMatch);
+    const bd = Boolean(parsed.businessDirectionMatch);
     return {
       keyword,
-      recommendation,
-      businessTypeMatch,
-      businessDirectionMatch,
+      recommendation: bt && bd ? "keep" : "exclude",
+      businessTypeMatch: bt,
+      businessDirectionMatch: bd,
       confidence: Math.min(100, Math.max(0, Number(parsed.confidence) || 0)),
       reasoning: parsed.reasoning || "分析完成。",
       searchResults: [],
       searchSummary: parsed.searchSummary || "",
     };
+  };
+
+  try {
+    return parseResult(await doCall());
   } catch (error) {
-    console.error(`[LLM] Analysis failed for "${keyword}":`, error);
-    return {
-      keyword,
-      recommendation: "exclude",
-      businessTypeMatch: false,
-      businessDirectionMatch: false,
-      confidence: 0,
-      reasoning: "分析过程中出现错误，建议手动检查该关键词。",
-      searchResults: [],
-      searchSummary: "",
-    };
+    console.warn(`[LLM] First attempt failed for \"${keyword}\", retrying...`, String(error).slice(0, 100));
+    try {
+      return parseResult(await doCall());
+    } catch (retryError) {
+      console.error(`[LLM] Analysis failed for \"${keyword}\" after retry:`, retryError);
+      return {
+        keyword,
+        recommendation: "exclude",
+        businessTypeMatch: false,
+        businessDirectionMatch: false,
+        confidence: 0,
+        reasoning: "分析过程中出现错误，建议手动检查该关键词。",
+        searchResults: [],
+        searchSummary: "",
+      };
+    }
   }
 }
 
@@ -140,7 +124,8 @@ async function analyzeKeywordSemantics(
 async function generateOverallSummary(
   results: KeywordAnalysis[],
   businessDirection: string,
-  businessType: BusinessType
+  businessType: BusinessType,
+  model?: string
 ): Promise<string> {
   const keepCount = results.filter((r) => r.recommendation === "keep").length;
   const excludeCount = results.filter((r) => r.recommendation === "exclude").length;
@@ -150,6 +135,7 @@ async function generateOverallSummary(
 
   try {
     const response = await invokeLLM({
+      modelOverride: model,
       messages: [
         {
           role: "system",
@@ -180,51 +166,70 @@ async function generateOverallSummary(
 async function extractNegativeInsights(
   results: KeywordAnalysis[],
   businessDirection: string,
-  businessType: BusinessType
-): Promise<NegativeInsights> {
+  businessType: BusinessType,
+  model?: string
+): Promise<NegativeInsights & { overallSummary: string }> {
   const excluded = results.filter((r) => r.recommendation === "exclude");
-  if (excluded.length === 0) return { groups: [], hasInsights: false };
+  const keepCount = results.filter((r) => r.recommendation === "keep").length;
+  const excludeCount = excluded.length;
+
+  if (excluded.length === 0) {
+    const fallbackSummary = `共分析 ${results.length} 个关键词，全部建议保留。`;
+    return { groups: [], hasInsights: false, overallSummary: fallbackSummary };
+  }
 
   const excludedList = excluded
     .map((r) => `"${r.keyword}"（原因：${r.reasoning.slice(0, 60)}）`)
     .join("\n");
 
+  const summaryLines = results
+    .map((r) => `"${r.keyword}": ${r.recommendation === "keep" ? "保留" : "排除"}`)
+    .join("、");
+
   try {
     const response = await invokeLLM({
+      modelOverride: model,
       messages: [
         {
           role: "system",
           content:
-            "你是一位资深的 Google Ads SEM 优化专家，擅长否词策略分析。请严格按照 JSON 格式返回结果，所有文字使用中文。",
+            "你是一位资深的 Google Ads SEM 优化专家，擅长否词策略分析和优化总结。请严格按照 JSON 格式返回结果，所有文字使用中文。",
         },
         {
           role: "user",
-          content: `分析以下被排除的关键词，提取可用于广泛匹配否词的核心词根，按类别分组。
+          content: `请完成两项任务：
+
+**任务1：否词提取**  
+分析以下被排除的关键词，提取可用于广泛匹配否词的核心词根，按类别分组。
+
+**任务2：总体分析总结**  
+基于全部 ${results.length} 个关键词结果撰写一段简洁的总结（100字以内，纯文本，无markdown）。
 
 客户业务：${businessDirection}（${businessType}）
+共 ${results.length} 个关键词，${keepCount} 个建议保留，${excludeCount} 个建议排除。明细：${summaryLines}
 
 被排除的关键词：
 ${excludedList}
 
-请识别以下类型（如有）：
+否词分类规则：
 1. 竞对品牌词/无关品牌词：关键词中出现的竞争对手或无关品牌名称
 2. 无关产品词：与客户业务完全不相关的产品类别词
 3. 无关行业词：指向完全不同行业的词汇
 4. 其他无关词：其他可批量排除的词根
 
 重要规则（必须严格遵守）：
-1. 只提取词根（如从"Siemens PLC"提取"Siemens"），不要包含整个关键词。
-2. 严禁翻译：词根必须保持与原关键词完全相同的语言形式。英文关键词只能提取英文词根，中文关键词只能提取中文词根，绝对不允许将英文翻译成中文或将中文翻译成英文。
-3. 例如：从"electric bike"只能提取"electric bike"或"electric"，绝不能输出"电动车"；从"逆变器"只能提取"逆变器"，绝不能输出"inverter"。
+1. 只提取词根，不要包含整个关键词。
+2. 严禁翻译：词根必须保持与原关键词完全相同的语言形式。
+3. 整体总结请输出优化建议，说明哪些方向需要重点加否词。
 
 返回 JSON 格式：
-{"groups":[{"category":"分类名","description":"排除原因（20字内）","terms":["词根1","词根2"]}]}`,
+{"groups":[{"category":"分类名","description":"排除原因（20字内）","terms":["词根1","词根2"]}],"overallSummary":"一段优化总结文案，100字以内"}`,
         },
       ],
       response_format: {
         type: "json_schema",
         json_schema: {
-          name: "negative_insights",
+          name: "negative_insights_with_summary",
           strict: true,
           schema: {
             type: "object",
@@ -242,8 +247,9 @@ ${excludedList}
                   additionalProperties: false,
                 },
               },
+              overallSummary: { type: "string" },
             },
-            required: ["groups"],
+            required: ["groups", "overallSummary"],
             additionalProperties: false,
           },
         },
@@ -254,7 +260,7 @@ ${excludedList}
     const parsed =
       typeof content === "string"
         ? JSON.parse(content)
-        : JSON.parse((content as any)?.[0]?.text || '{"groups":[]}');
+        : JSON.parse((content as any)?.[0]?.text || '{"groups":[],"overallSummary":""}');
 
     const groups: NegativeInsightGroup[] = (parsed.groups || [])
       .filter((g: any) => Array.isArray(g.terms) && g.terms.length > 0)
@@ -264,10 +270,14 @@ ${excludedList}
         terms: g.terms.filter((t: any) => typeof t === "string" && t.trim().length > 0),
       }));
 
-    return { groups, hasInsights: groups.length > 0 };
+    const overallSummary: string = parsed.overallSummary?.trim() ||
+      `共分析 ${results.length} 个关键词，${keepCount} 个建议保留，${excludeCount} 个建议排除。`;
+
+    return { groups, hasInsights: groups.length > 0, overallSummary };
   } catch (error) {
     console.error("[NegativeInsights] Extraction failed:", error);
-    return { groups: [], hasInsights: false };
+    const fallbackSummary = `共分析 ${results.length} 个关键词，其中 ${keepCount} 个建议保留，${excludeCount} 个建议排除。`;
+    return { groups: [], hasInsights: false, overallSummary: fallbackSummary };
   }
 }
 
@@ -279,7 +289,10 @@ function buildCacheKey(
   businessType: string,
   keywords: string[]
 ): string {
+  // Include prompt version in cache key so prompt changes auto-invalidate cache
+  const PROMPT_VERSION = "v3";
   const canonical = JSON.stringify({
+    v: PROMPT_VERSION,
     bd: businessDirection.trim().toLowerCase(),
     bt: businessType,
     kw: [...keywords].sort(),
@@ -410,6 +423,8 @@ export const keywordRouter = router({
           .min(1, "请至少输入一个关键词")
           .max(100, "单次最多分析 100 个关键词"),
         forceRefresh: z.boolean().optional().default(false),
+        /** Per-request model override (e.g., "deepseek-v4-flash" or "deepseek-v4-pro") */
+        model: z.string().optional(),
         /** If provided, load history for this client and deduplicate */
         clientId: z.number().int().positive().optional(),
         /** If provided, create a new client profile before analyzing */
@@ -421,6 +436,7 @@ export const keywordRouter = router({
     .mutation(async ({ ctx, input }) => {
       const { businessDirection, businessType, keywords, forceRefresh } = input;
       let { clientId } = input;
+      const { model } = input;
 
       // Reset token tracker for this request
       TokenTracker.reset();
@@ -503,7 +519,7 @@ export const keywordRouter = router({
         const batch = keywordsToAnalyze.slice(i, i + LLM_BATCH);
         const batchResults = await Promise.all(
           batch.map((kw) =>
-            analyzeKeywordSemantics(kw, businessDirection, businessType)
+            analyzeKeywordSemantics(kw, businessDirection, businessType, model)
           )
         );
         freshResults.push(...batchResults);
@@ -519,18 +535,15 @@ export const keywordRouter = router({
       }).filter(Boolean);
 
       // -----------------------------------------------------------------------
-      // Summary + negative insights (based on full merged result set)
+      // Summary + negative insights (single combined LLM call, saves tokens)
       // -----------------------------------------------------------------------
-      const [overallSummary, negativeInsights] = await Promise.all([
-        generateOverallSummary(allResults, businessDirection, businessType),
-        extractNegativeInsights(allResults, businessDirection, businessType),
-      ]);
+      const combined = await extractNegativeInsights(allResults, businessDirection, businessType, model);
 
       const report: AnalysisReport = {
         input: { businessDirection, businessType, keywords: cleanKeywords },
         results: allResults,
-        overallSummary,
-        negativeInsights,
+        overallSummary: combined.overallSummary,
+        negativeInsights: { groups: combined.groups, hasInsights: combined.hasInsights },
         analyzedAt: Date.now(),
       };
 
@@ -547,12 +560,12 @@ export const keywordRouter = router({
 
       // -----------------------------------------------------------------------
       // Quota: Increment daily_keyword_count after successful analysis
-      // -----------------------------------------------------------------------
-      const newCount = await incrementDailyKeywordCount(ctx.user.id, cleanKeywords.length);
-      console.log(`[Quota] User ${ctx.user.id}: incremented by ${cleanKeywords.length}, new count: ${newCount}`);
+      // Quota: only count newly analyzed keywords (not cached/deduped)
+      const newCount = await incrementDailyKeywordCount(ctx.user.id, freshResults.length);
+      console.log(`[Quota] User ${ctx.user.id}: incremented by ${freshResults.length} (${cleanKeywords.length} total, ${keywordsToAnalyze.length} new), new count: ${newCount}`);
 
       const tokenUsage = TokenTracker.getTotal();
-      TokenTracker.log(`keyword.analyze | ${cleanKeywords.length} keywords`);
+      TokenTracker.log(`keyword.analyze | ${freshResults.length} keywords analyzed`);
 
       return {
         ...report,
