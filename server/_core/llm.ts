@@ -248,11 +248,13 @@ const normalizeResponseFormat = ({
   response_format,
   outputSchema,
   output_schema,
+  model,
 }: {
   responseFormat?: ResponseFormat;
   response_format?: ResponseFormat;
   outputSchema?: OutputSchema;
   output_schema?: OutputSchema;
+  model: string;
 }):
   | { type: "json_schema"; json_schema: JsonSchema }
   | { type: "text" }
@@ -260,6 +262,11 @@ const normalizeResponseFormat = ({
   | undefined => {
   const explicitFormat = responseFormat || response_format;
   if (explicitFormat) {
+    // Only Gemini supports json_schema with strict mode.
+    // Downgrade to json_object for OpenAI-compatible APIs (DeepSeek, etc.)
+    if (explicitFormat.type === "json_schema" && !model.startsWith("gemini")) {
+      return { type: "json_object" };
+    }
     if (
       explicitFormat.type === "json_schema" &&
       !explicitFormat.json_schema?.schema
@@ -276,6 +283,11 @@ const normalizeResponseFormat = ({
 
   if (!schema.name || !schema.schema) {
     throw new Error("outputSchema requires both name and schema");
+  }
+
+  // Only Gemini supports json_schema. Downgrade to json_object for others.
+  if (!model.startsWith("gemini")) {
+    return { type: "json_object" };
   }
 
   return {
@@ -333,6 +345,7 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
     response_format,
     outputSchema,
     output_schema,
+    model,
   });
 
   if (normalizedResponseFormat) {
