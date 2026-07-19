@@ -305,8 +305,10 @@ interface SearchTermResultsProps {
   onNextPage: () => void;
   /** Backend-provided high-level negative keyword groups */
   negativeGroups?: import("../../../shared/types").NegativeGroup[];
-  /** Token usage from last batch */
+  /** Token usage from accumulated batches */
   tokenUsage?: { total_tokens: number };
+  /** All batches completed (no more pages, no errors) */
+  allDone: boolean;
 }
 
 export function SearchTermResults({
@@ -326,6 +328,7 @@ export function SearchTermResults({
   onNextPage,
   negativeGroups,
   tokenUsage,
+  allDone,
 }: SearchTermResultsProps) {
   const keepResults = results.filter((r) => r.suggestion === "保留");
   const excludeResults = results.filter((r) => r.suggestion === "排除");
@@ -671,46 +674,60 @@ export function SearchTermResults({
             <Loader2 className="w-4 h-4 animate-spin" />
             分析中...
           </div>
-        ) : hasMore ? (
-          <TooltipProvider>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <span>
-                  <Button
-                    size="sm"
-                    onClick={onContinue}
-                    disabled={!canContinue}
-                    className="gap-2"
-                  >
-                    <ArrowRight className="w-4 h-4" />
-                    继续分析下 {Math.min(100, totalToProcess - currentIndex)} 个高耗费词
-                  </Button>
-                </span>
-              </TooltipTrigger>
-              {!canContinue && (
-                <TooltipContent>
-                  <p>今日剩余额度（{remainingQuota} 词）不足以支撑下一批次，额度次日清零。</p>
-                </TooltipContent>
-              )}
-            </Tooltip>
-          </TooltipProvider>
-        ) : currentPage + 1 < totalPages ? (
-          <div className="flex items-center gap-3">
-            <span className="text-xs text-muted-foreground">
-              第 {currentPage + 1} 页已完成
-            </span>
-            <Button size="sm" onClick={onNextPage} className="gap-2">
-              <ArrowRight className="w-4 h-4" />
-              分析第 {currentPage + 2} 页
-            </Button>
-          </div>
-        ) : (
+        ) : allDone ? (
           <div className="flex items-center gap-2 text-sm text-apple-green">
             <SkipForward className="w-4 h-4" />
             全部 {totalPages} 页已分析完成
           </div>
+        ) : !hasMore ? (
+          <Button size="sm" onClick={onNextPage} className="gap-2">
+            <ArrowRight className="w-4 h-4" />
+            分析下一页
+          </Button>
+        ) : (
+          <Button size="sm" onClick={onContinue} disabled={!canContinue} className="gap-2">
+            <ArrowRight className="w-4 h-4" />
+            继续分析（{Math.min(100, totalToProcess - currentIndex)} 词）
+          </Button>
         )}
       </div>
+
+      {/* All-done summary card */}
+      {allDone && (
+        <div className="mt-4 p-4 rounded-xl bg-apple-green/5 border border-apple-green/20 space-y-3">
+          <div className="flex items-center gap-2 text-sm font-semibold text-apple-green">
+            <CheckCircle2 className="w-4 h-4" />
+            分析完成 · 汇总
+          </div>
+          <div className="grid grid-cols-3 gap-3 text-center">
+            <div className="bg-background/50 rounded-lg py-2">
+              <div className="text-lg font-bold text-foreground">{results.length}</div>
+              <div className="text-[10px] text-muted-foreground">总词数</div>
+            </div>
+            <div className="bg-background/50 rounded-lg py-2">
+              <div className="text-lg font-bold text-apple-green">{keepResults.length}</div>
+              <div className="text-[10px] text-muted-foreground">建议保留</div>
+            </div>
+            <div className="bg-background/50 rounded-lg py-2">
+              <div className="text-lg font-bold text-apple-red">{excludeResults.length}</div>
+              <div className="text-[10px] text-muted-foreground">建议排除</div>
+            </div>
+          </div>
+          {tokenUsage?.total_tokens ? (
+            <div className="text-xs text-muted-foreground text-center">
+              累计消耗 {tokenUsage.total_tokens.toLocaleString()} tokens
+            </div>
+          ) : null}
+        </div>
+      )}
+
+      {/* Error */}
+      {error && (
+        <div className="flex items-center gap-2 text-sm text-apple-red p-3 rounded-lg bg-apple-red/5 border border-apple-red/20">
+          <AlertTriangle className="w-4 h-4 shrink-0" />
+          <span>{error}</span>
+        </div>
+      )}
     </div>
   );
 }

@@ -130,7 +130,7 @@ export default function Home() {
   const [csvParseResult, setCsvParseResult] = useState<CSVParseResult | null>(null);
   const [showSearchTermResults, setShowSearchTermResults] = useState(false);
   const [csvCurrentPage, setCsvCurrentPage] = useState(0); // 0-indexed, tracks which page was last analyzed
-  const { queue, initQueue, analyzeNextBatch, resetQueue, hasMore, remainingQuota, canContinue, loadSavedPage, getSavedPageList } = useSearchTermQueue();
+  const { queue, initQueue, startAutoAnalysis, resetQueue, hasMore, remainingQuota, canContinue, loadSavedPage, getSavedPageList } = useSearchTermQueue();
   // Saved page results for viewing previously analyzed pages without re-running
   const [savedPageResults, setSavedPageResults] = useState<import('../../../shared/types').SearchTermAnalysis[] | null>(null);
   const [fromCache, setFromCache] = useState(false);
@@ -236,38 +236,30 @@ export default function Home() {
     setShowSearchTermResults(false);
   }, []);
 
-  // Handler: start analysis from preview
-  // rows is already sliced to the current page (≤ 100) by SearchTermPreview
+  // Handler: start analysis from preview — auto-runs all pages
   const handleStartSearchTermAnalysis = useCallback((rows: import('../hooks/useCSVParser').SearchTermRow[], page: number) => {
     if (!urlClientId || !user) return;
     setCsvCurrentPage(page);
-    // initQueue synchronously updates queueRef.current via updateQueue,
-    // so analyzeNextBatch can safely read the updated state right after.
+    setSavedPageResults(null);
     initQueue({
       rows,
       businessDirection: businessDirection.trim(),
       businessType,
       clientId: urlClientId,
-      initialQuota: {
-        count: user.daily_keyword_count ?? 0,
-        limit: user.daily_keyword_limit ?? 1000,
-      },
+      initialQuota: { count: user.daily_keyword_count ?? 0, limit: user.daily_keyword_limit ?? 1000 },
       pageIndex: page,
     });
     setShowSearchTermResults(true);
-    // Collapse the input form so the result section takes center stage
     setFormCollapsedPersist(true);
-    // Use a short delay to ensure React has flushed the state update
-    // and queueRef.current reflects the newly initialized queue.
     setTimeout(() => {
-      analyzeNextBatch(analyzeSearchTermsMutation.mutateAsync as any);
+      startAutoAnalysis(analyzeSearchTermsMutation.mutateAsync as any);
     }, 50);
-  }, [urlClientId, user, businessDirection, businessType, initQueue, analyzeNextBatch, analyzeSearchTermsMutation.mutateAsync, setFormCollapsedPersist]);
+  }, [urlClientId, user, businessDirection, businessType, initQueue, startAutoAnalysis, analyzeSearchTermsMutation.mutateAsync, setFormCollapsedPersist]);
 
-  // Handler: continue next batch
+  // Handler: continue next batch (manual trigger after pause/error)
   const handleContinueSearchTermAnalysis = useCallback(() => {
-    analyzeNextBatch(analyzeSearchTermsMutation.mutateAsync as any);
-  }, [analyzeNextBatch, analyzeSearchTermsMutation.mutateAsync]);
+    startAutoAnalysis(analyzeSearchTermsMutation.mutateAsync as any);
+  }, [startAutoAnalysis, analyzeSearchTermsMutation.mutateAsync]);
 
   // Handler: reset CSV mode
   const handleResetSearchTermMode = useCallback(() => {
@@ -1132,8 +1124,9 @@ export default function Home() {
                 onReset={handleResetSearchTermMode}
                 currentPage={csvCurrentPage}
                 totalPages={csvParseResult ? Math.max(1, Math.ceil(csvParseResult.rows.length / 100)) : 1}
-                negativeGroups={queue.negativeGroups}
-                tokenUsage={queue.tokenUsage}
+                negativeGroups={queue.accumulatedNegativeGroups}
+                tokenUsage={queue.totalTokens}
+                allDone={!savedPageResults && !queue.isAnalyzing && !queue.error && !hasMore && queue.results.length > 0}
                 onNextPage={() => {
                   setSavedPageResults(null);
                   setCsvCurrentPage((p) => p + 1);
