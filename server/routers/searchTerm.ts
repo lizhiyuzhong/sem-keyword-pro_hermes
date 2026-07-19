@@ -274,7 +274,7 @@ function extractNegativeGroups(excluded: SearchTermAnalysis[]): NegativeGroup[] 
     // Collect unique extracted terms, deduplicate, limit to 20 per group
     const termSet = new Set<string>();
     for (const item of items) {
-      if (item.extractedNegative) {
+      if (item.extractedNegative && typeof item.extractedNegative === "string") {
         const cleaned = item.extractedNegative.trim().toLowerCase();
         if (cleaned.length > 1) termSet.add(cleaned);
       }
