@@ -200,6 +200,17 @@ async function analyzeSearchTermsBatch(
     let dim2 = parseDim(found.dim2);
     let dim3 = parseDim(found.dim3);
 
+    // Detect when LLM copies the same reason to all three dimensions (common bug)
+    if (
+      dim1?.status === "fail" &&
+      dim2?.status === "fail" &&
+      dim3?.status === "fail" &&
+      dim1.reason === dim2.reason &&
+      dim2.reason === dim3.reason
+    ) {
+      console.warn(`[SearchTerm] Same-reason detected for "${t.term}" — LLM likely did not analyze independently.`);
+    }
+
     // Enforce short-circuit logic: if dim1 fails, dim2/dim3 must be na
     if (dim1?.status === "fail") {
       dim2 = { status: "na", reason: "已短路跳过：客户类型不符，无需继续分析" };
@@ -222,6 +233,61 @@ async function analyzeSearchTermsBatch(
       dim3,
     };
   });
+}
+
+// ---------------------------------------------------------------------------
+// High-level negative keyword group extraction (max 5 categories)
+// ---------------------------------------------------------------------------
+interface NegativeGroup {
+  category: string;
+  description: string;
+  terms: string[];
+}
+
+function extractNegativeGroups(excluded: SearchTermAnalysis[]): NegativeGroup[] {
+  if (excluded.length === 0) return [];
+
+  // Group by negativeCategory
+  const byCategory = new Map<string, SearchTermAnalysis[]>();
+  for (const r of excluded) {
+    const cat = r.negativeCategory || "无关业务/产品词";
+    if (!byCategory.has(cat)) byCategory.set(cat, []);
+    byCategory.get(cat)!.push(r);
+  }
+
+  const CATEGORY_DESC: Record<string, string> = {
+    "竞对公司词": "搜索词包含竞争对手公司名或品牌名，建议全部加入否词",
+    "无关业务/产品词": "搜索词属于完全不同行业或产品类别，与客户业务无关",
+    "C端个人消费词": "个人零售、家用、DIY 等 C 端意图，不符合 B2B 定位",
+    "纯信息/学术词": "纯资讯、百科、学术查询，无商业转化意图",
+    "触发偏移词": "与触发关键字存在语义偏移或越级触发，匹配错误",
+  };
+
+  // Priority order for display
+  const ORDER = ["竞对公司词", "无关业务/产品词", "C端个人消费词", "纯信息/学术词", "触发偏移词"];
+
+  const groups: NegativeGroup[] = [];
+  for (const cat of ORDER) {
+    const items = byCategory.get(cat);
+    if (!items || items.length === 0) continue;
+
+    // Collect unique extracted terms, deduplicate, limit to 20 per group
+    const termSet = new Set<string>();
+    for (const item of items) {
+      if (item.extractedNegative) {
+        const cleaned = item.extractedNegative.trim().toLowerCase();
+        if (cleaned.length > 1) termSet.add(cleaned);
+      }
+    }
+
+    groups.push({
+      category: cat,
+      description: CATEGORY_DESC[cat] || "",
+      terms: Array.from(termSet).slice(0, 20),
+    });
+  }
+
+  return groups;
 }
 
 // ---------------------------------------------------------------------------
@@ -389,6 +455,11 @@ export const searchTermRouter = router({
       }
 
       // -----------------------------------------------------------------------
+      // Post-analysis: extract high-level negative keyword groups (max 5 categories)
+      // -----------------------------------------------------------------------
+      const negativeGroups = extractNegativeGroups(freshResults.filter(r => r.suggestion === "排除"));
+
+      // -----------------------------------------------------------------------
       // Merge: historical + fresh, preserving input order
       // -----------------------------------------------------------------------
 
@@ -480,6 +551,7 @@ export const searchTermRouter = router({
 
       return {
         ...report,
+        negativeGroups,
         dailyKeywordCount: newCount >= 0 ? newCount : currentUser.daily_keyword_count,
         dailyKeywordLimit: currentUser.daily_keyword_limit,
         tokenUsage,

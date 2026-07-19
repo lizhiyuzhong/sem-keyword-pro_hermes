@@ -30,6 +30,10 @@ export interface QueueState {
   model: string;
   /** Skipped count from last batch (L2 dedup) */
   lastSkippedCount: number;
+  /** Backend-provided negative keyword groups (latest batch) */
+  negativeGroups?: Array<{ category: string; description: string; terms: string[] }>;
+  /** Token usage from latest batch */
+  tokenUsage?: { total_tokens: number };
 }
 
 const BATCH_SIZE = 100;
@@ -260,6 +264,8 @@ export function useSearchTermQueue(): UseSearchTermQueueReturn {
             dailyKeywordCount: result.dailyKeywordCount ?? prev.dailyKeywordCount,
             dailyKeywordLimit: result.dailyKeywordLimit ?? prev.dailyKeywordLimit,
             lastSkippedCount: result.skippedCount ?? 0,
+            negativeGroups: (result as any).negativeGroups ?? prev.negativeGroups,
+            tokenUsage: (result as any).tokenUsage ?? prev.tokenUsage,
             error: null,
           };
         });

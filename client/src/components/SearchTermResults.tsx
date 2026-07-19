@@ -300,12 +300,13 @@ interface SearchTermResultsProps {
   error: string | null;
   onContinue: () => void;
   onReset: () => void;
-  /** Current page index (0-indexed) being analyzed */
   currentPage: number;
-  /** Total number of pages in the CSV */
   totalPages: number;
-  /** Go back to preview at the next page */
   onNextPage: () => void;
+  /** Backend-provided high-level negative keyword groups */
+  negativeGroups?: import("../../../shared/types").NegativeGroup[];
+  /** Token usage from last batch */
+  tokenUsage?: { total_tokens: number };
 }
 
 export function SearchTermResults({
@@ -323,10 +324,15 @@ export function SearchTermResults({
   currentPage,
   totalPages,
   onNextPage,
+  negativeGroups,
+  tokenUsage,
 }: SearchTermResultsProps) {
   const keepResults = results.filter((r) => r.suggestion === "保留");
   const excludeResults = results.filter((r) => r.suggestion === "排除");
   const progressPct = totalToProcess === 0 ? 0 : Math.round((currentIndex / totalToProcess) * 100);
+
+  // Use backend-provided groups if available, otherwise fall back to frontend construction
+  const insightGroups = negativeGroups ?? buildInsightGroups(results);
 
   // Selection state
   const [selectedKeep, setSelectedKeep] = useState<Set<string>>(new Set());
@@ -337,9 +343,6 @@ export function SearchTermResults({
   const [copiedKeep, setCopiedKeep] = useState(false);
   const [copiedExclude, setCopiedExclude] = useState(false);
   const [copiedRoots, setCopiedRoots] = useState<Record<string, boolean>>({});
-
-  // Smart negative insight groups
-  const insightGroups = buildInsightGroups(results);
 
   const copyKeep = useCallback(() => {
     const list = keepResults

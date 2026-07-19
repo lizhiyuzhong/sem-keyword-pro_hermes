@@ -92,9 +92,18 @@ export interface SearchTermReport {
   businessDirection: string;
   businessType: BusinessType;
   results: SearchTermAnalysis[];
-  totalCount: number;       // total terms in this batch
-  skippedCount: number;     // terms skipped due to L2 history dedup
+  totalCount: number;
+  skippedCount: number;
   analyzedAt: number;
+  /** High-level negative keyword groups (max 5 categories) */
+  negativeGroups?: NegativeGroup[];
+}
+
+/** A grouped negative keyword category with extracted terms */
+export interface NegativeGroup {
+  category: string;
+  description: string;
+  terms: string[];
 }
 
 /** Full analysis report */

@@ -1132,6 +1132,8 @@ export default function Home() {
                 onReset={handleResetSearchTermMode}
                 currentPage={csvCurrentPage}
                 totalPages={csvParseResult ? Math.max(1, Math.ceil(csvParseResult.rows.length / 100)) : 1}
+                negativeGroups={queue.negativeGroups}
+                tokenUsage={queue.tokenUsage}
                 onNextPage={() => {
                   setSavedPageResults(null);
                   setCsvCurrentPage((p) => p + 1);
