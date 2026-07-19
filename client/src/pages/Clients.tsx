@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { useLocation } from "wouter";
 import { useAuth } from "@/_core/hooks/useAuth";
-import { getLoginUrl } from "@/const";
+import { safeGetLoginUrl } from "@/const";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -70,7 +70,8 @@ export default function Clients() {
   // Redirect to login if unauthenticated
   useEffect(() => {
     if (!authLoading && !isAuthenticated) {
-      window.location.href = getLoginUrl();
+      const url = safeGetLoginUrl();
+      if (url) window.location.href = url;
     }
   }, [authLoading, isAuthenticated]);
 
@@ -399,7 +400,10 @@ export default function Clients() {
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={() => window.location.href = getLoginUrl()}
+                onClick={() => {
+                  const url = safeGetLoginUrl();
+                  if (url) window.location.href = url;
+                }}
                 className="gap-1.5 text-xs text-muted-foreground hover:text-foreground rounded-xl"
               >
                 <LogIn className="w-3.5 h-3.5" />

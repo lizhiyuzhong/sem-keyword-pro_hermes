@@ -209,15 +209,38 @@ const normalizeToolChoice = (
   return toolChoice;
 };
 
-const resolveApiUrl = () =>
-  ENV.forgeApiUrl && ENV.forgeApiUrl.trim().length > 0
-    ? `${ENV.forgeApiUrl.replace(/\/$/, "")}/v1/chat/completions`
-    : "https://forge.manus.im/v1/chat/completions";
+const resolveApiUrl = () => {
+  // Priority 1: Custom LLM_API_URL (for development with external API)
+  if (ENV.llmApiUrl && ENV.llmApiUrl.trim().length > 0) {
+    const base = ENV.llmApiUrl.replace(/\/+$/, "");
+    // If URL already includes /v1/chat/completions, use as-is
+    if (base.endsWith("/v1/chat/completions")) return base;
+    return `${base}/v1/chat/completions`;
+  }
+  // Priority 2: Manus Forge API (production default)
+  if (ENV.forgeApiUrl && ENV.forgeApiUrl.trim().length > 0) {
+    return `${ENV.forgeApiUrl.replace(/\/$/, "")}/v1/chat/completions`;
+  }
+  // Fallback
+  return "https://forge.manus.im/v1/chat/completions";
+};
 
 const assertApiKey = () => {
-  if (!ENV.forgeApiKey) {
-    throw new Error("OPENAI_API_KEY is not configured");
-  }
+  // Priority 1: custom LLM_API_KEY
+  if (ENV.llmApiKey && ENV.llmApiKey.trim().length > 0) return;
+  // Priority 2: Manus Forge API key
+  if (ENV.forgeApiKey && ENV.forgeApiKey.trim().length > 0) return;
+  throw new Error("No LLM API key configured. Set LLM_API_KEY or BUILT_IN_FORGE_API_KEY.");
+};
+
+const resolveApiKey = (): string => {
+  if (ENV.llmApiKey && ENV.llmApiKey.trim().length > 0) return ENV.llmApiKey;
+  return ENV.forgeApiKey;
+};
+
+const resolveModel = (): string => {
+  if (ENV.llmModel && ENV.llmModel.trim().length > 0) return ENV.llmModel;
+  return "gemini-2.5-flash";
 };
 
 const normalizeResponseFormat = ({
@@ -279,8 +302,10 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
     response_format,
   } = params;
 
+  const model = resolveModel();
+
   const payload: Record<string, unknown> = {
-    model: "gemini-2.5-flash",
+    model,
     messages: messages.map(normalizeMessage),
   };
 
@@ -297,8 +322,10 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
   }
 
   payload.max_tokens = 32768
-  payload.thinking = {
-    "budget_tokens": 128
+
+  // Gemini-specific thinking budget — only set for Gemini models
+  if (model.startsWith("gemini")) {
+    payload.thinking = { budget_tokens: 128 };
   }
 
   const normalizedResponseFormat = normalizeResponseFormat({
@@ -325,7 +352,7 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
         method: "POST",
         headers: {
           "content-type": "application/json",
-          authorization: `Bearer ${ENV.forgeApiKey}`,
+          authorization: `Bearer ${resolveApiKey()}`,
         },
         body: JSON.stringify(payload),
         signal: controller.signal,

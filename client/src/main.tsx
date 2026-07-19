@@ -10,6 +10,11 @@ import "./index.css";
 
 const queryClient = new QueryClient();
 
+/** Safe wrapper: returns empty string when OAuth is not configured (dev mode). */
+function safeGetLoginUrl(): string {
+  try { return getLoginUrl(); } catch { return ""; }
+}
+
 const redirectToLoginIfUnauthorized = (error: unknown) => {
   if (!(error instanceof TRPCClientError)) return;
   if (typeof window === "undefined") return;
@@ -18,7 +23,8 @@ const redirectToLoginIfUnauthorized = (error: unknown) => {
 
   if (!isUnauthorized) return;
 
-  window.location.href = getLoginUrl();
+  const url = safeGetLoginUrl();
+  if (url) window.location.href = url;
 };
 
 queryClient.getQueryCache().subscribe(event => {

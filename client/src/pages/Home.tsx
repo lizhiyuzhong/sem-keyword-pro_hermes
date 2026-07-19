@@ -1,7 +1,7 @@
 import { useState, useCallback, useRef, useEffect } from "react";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { useLocation, useSearch } from "wouter";
-import { getLoginUrl } from "@/const";
+import { safeGetLoginUrl } from "@/const";
 import { motion, AnimatePresence } from "framer-motion";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
@@ -431,7 +431,8 @@ export default function Home() {
 
   const handleLoginPromptConfirm = useCallback(() => {
     setShowLoginPrompt(false);
-    window.location.href = getLoginUrl();
+    const url = safeGetLoginUrl();
+    if (url) window.location.href = url;
   }, []);
 
   const [showReadme, setShowReadme] = useState(false);
@@ -774,7 +775,10 @@ export default function Home() {
                 <Button
                   variant="ghost"
                   size="sm"
-                  onClick={() => window.location.href = getLoginUrl()}
+                  onClick={() => {
+                    const url = safeGetLoginUrl();
+                    if (url) window.location.href = url;
+                  }}
                   className="gap-1.5 text-xs text-muted-foreground hover:text-foreground rounded-xl"
                 >
                   <LogIn className="w-3.5 h-3.5" />

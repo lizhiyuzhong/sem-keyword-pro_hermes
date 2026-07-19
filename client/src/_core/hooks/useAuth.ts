@@ -8,8 +8,17 @@ type UseAuthOptions = {
   redirectPath?: string;
 };
 
+/** Safe wrapper: returns empty string when OAuth is not configured (dev mode). */
+function safeGetLoginUrl(): string {
+  try {
+    return getLoginUrl();
+  } catch {
+    return "";
+  }
+}
+
 export function useAuth(options?: UseAuthOptions) {
-  const { redirectOnUnauthenticated = false, redirectPath = getLoginUrl() } =
+  const { redirectOnUnauthenticated = false, redirectPath = safeGetLoginUrl() } =
     options ?? {};
   const utils = trpc.useUtils();
 
@@ -62,6 +71,7 @@ export function useAuth(options?: UseAuthOptions) {
 
   useEffect(() => {
     if (!redirectOnUnauthenticated) return;
+    if (!redirectPath) return; // OAuth not configured — skip redirect
     if (meQuery.isLoading || logoutMutation.isPending) return;
     if (state.user) return;
     if (typeof window === "undefined") return;
