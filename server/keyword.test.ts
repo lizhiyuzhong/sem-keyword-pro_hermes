@@ -36,6 +36,12 @@ vi.mock("./_core/llm", () => ({
       ],
     });
   }),
+  TokenTracker: {
+    reset: vi.fn(),
+    add: vi.fn(),
+    getTotal: vi.fn(() => ({ prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 })),
+    log: vi.fn(),
+  },
 }));
 
 function createPublicContext(): TrpcContext {
