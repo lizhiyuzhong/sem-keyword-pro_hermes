@@ -1,4 +1,47 @@
 import { ENV } from "./env";
+import { appendFileSync, mkdirSync, existsSync } from "fs";
+import { join } from "path";
+
+// ---------------------------------------------------------------------------
+// Token usage tracker (per-request, reset by caller)
+// ---------------------------------------------------------------------------
+export interface TokenUsage {
+  prompt_tokens: number;
+  completion_tokens: number;
+  total_tokens: number;
+}
+
+export const TokenTracker = {
+  usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 } as TokenUsage,
+
+  reset() {
+    this.usage = { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 };
+  },
+
+  add(usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number }) {
+    if (!usage) return;
+    this.usage.prompt_tokens += usage.prompt_tokens ?? 0;
+    this.usage.completion_tokens += usage.completion_tokens ?? 0;
+    this.usage.total_tokens += usage.total_tokens ?? 0;
+  },
+
+  getTotal(): TokenUsage {
+    return { ...this.usage };
+  },
+
+  /** Write usage to log file (only in DEV_MODE). */
+  log(label: string) {
+    if (!ENV.devMode) return;
+    try {
+      const dir = join(process.cwd(), ".hermes");
+      if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+      const line = `[${new Date().toISOString()}] ${label} | prompt=${this.usage.prompt_tokens} completion=${this.usage.completion_tokens} total=${this.usage.total_tokens}\n`;
+      appendFileSync(join(dir, "token-usage.log"), line, "utf-8");
+    } catch {
+      // best-effort logging
+    }
+  },
+};
 
 export type Role = "system" | "user" | "assistant" | "tool" | "function";
 
@@ -379,7 +422,9 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
         );
       }
 
-      return (await response.json()) as InvokeResult;
+      const result = (await response.json()) as InvokeResult;
+      TokenTracker.add(result.usage);
+      return result;
     } catch (err: any) {
       clearTimeout(timer);
       const isTimeout = err?.name === "AbortError" || err?.message?.includes("aborted");

@@ -105,3 +105,10 @@ export interface AnalysisReport {
   negativeInsights: NegativeInsights;
   analyzedAt: number;
 }
+
+/** LLM token usage summary */
+export interface TokenUsage {
+  prompt_tokens: number;
+  completion_tokens: number;
+  total_tokens: number;
+}

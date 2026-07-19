@@ -1186,6 +1186,12 @@ export default function Home() {
                         {new Date(report.analyzedAt).toLocaleString("zh-CN", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
                       </span>
                     )}
+                    {(report as any)?.tokenUsage?.total_tokens > 0 && (
+                      <span className="flex items-center gap-1 text-xs text-muted-foreground" title={`Prompt: ${(report as any).tokenUsage.prompt_tokens} | Completion: ${(report as any).tokenUsage.completion_tokens}`}>
+                        <Sparkles className="w-2.5 h-2.5" />
+                        {(report as any).tokenUsage.total_tokens.toLocaleString()} tokens
+                      </span>
+                    )}
                     {fromCache && (
                       <button
                         onClick={handleForceRefresh}

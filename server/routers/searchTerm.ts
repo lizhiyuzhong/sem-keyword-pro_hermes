@@ -3,7 +3,7 @@ import { eq, and } from "drizzle-orm";
 import { readFileSync } from "fs";
 import { join } from "path";
 import { protectedProcedure, router } from "../_core/trpc";
-import { invokeLLM } from "../_core/llm";
+import { invokeLLM, TokenTracker } from "../_core/llm";
 import { getDb } from "../db";
 import { lazyResetQuota, checkQuotaAllowance, incrementDailyKeywordCount } from "../_core/quota";
 import { TRPCError } from "@trpc/server";
@@ -328,6 +328,9 @@ export const searchTermRouter = router({
     .mutation(async ({ ctx, input }) => {
       const { businessDirection, businessType, clientId, searchTerms } = input;
 
+      // Reset token tracker for this request
+      TokenTracker.reset();
+
       // Deduplicate input by composite key
       const seen = new Set<string>();
       const cleanTerms = searchTerms.filter((t) => {
@@ -466,10 +469,14 @@ export const searchTermRouter = router({
         analyzedAt: Date.now(),
       };
 
+      const tokenUsage = TokenTracker.getTotal();
+      TokenTracker.log(`searchTerm.analyze | ${cleanTerms.length} terms`);
+
       return {
         ...report,
         dailyKeywordCount: newCount >= 0 ? newCount : currentUser.daily_keyword_count,
         dailyKeywordLimit: currentUser.daily_keyword_limit,
+        tokenUsage,
       };
     }),
 });

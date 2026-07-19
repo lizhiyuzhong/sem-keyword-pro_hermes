@@ -2,7 +2,7 @@ import { z } from "zod";
 import { and, eq, inArray } from "drizzle-orm";
 import { createHash } from "crypto";
 import { protectedProcedure, publicProcedure, router } from "../_core/trpc";
-import { invokeLLM } from "../_core/llm";
+import { invokeLLM, TokenTracker } from "../_core/llm";
 import { getDb } from "../db";
 import { lazyResetQuota, checkQuotaAllowance, incrementDailyKeywordCount } from "../_core/quota";
 import { TRPCError } from "@trpc/server";
@@ -422,6 +422,9 @@ export const keywordRouter = router({
       const { businessDirection, businessType, keywords, forceRefresh } = input;
       let { clientId } = input;
 
+      // Reset token tracker for this request
+      TokenTracker.reset();
+
       const cleanKeywords = Array.from(
         new Set(keywords.map((k) => k.trim()).filter((k) => k.length > 0))
       );
@@ -548,12 +551,16 @@ export const keywordRouter = router({
       const newCount = await incrementDailyKeywordCount(ctx.user.id, cleanKeywords.length);
       console.log(`[Quota] User ${ctx.user.id}: incremented by ${cleanKeywords.length}, new count: ${newCount}`);
 
+      const tokenUsage = TokenTracker.getTotal();
+      TokenTracker.log(`keyword.analyze | ${cleanKeywords.length} keywords`);
+
       return {
         ...report,
         fromCache: false,
         clientId: clientId ?? null,
         dailyKeywordCount: newCount >= 0 ? newCount : currentUser.daily_keyword_count,
         dailyKeywordLimit: currentUser.daily_keyword_limit,
+        tokenUsage,
       };
     }),
 
