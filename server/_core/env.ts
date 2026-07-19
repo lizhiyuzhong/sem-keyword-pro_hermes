@@ -13,4 +13,6 @@ export const ENV = {
   llmApiKey: process.env.LLM_API_KEY ?? "",
   /** Custom LLM model name. Falls back to "gemini-2.5-flash". */
   llmModel: process.env.LLM_MODEL ?? "",
+  /** Dev mode: skip Manus OAuth, inject mock admin user. NEVER set on Manus. */
+  devMode: process.env.DEV_MODE === "true",
 };
