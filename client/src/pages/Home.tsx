@@ -1128,6 +1128,7 @@ export default function Home() {
                 tokenUsage={queue.totalTokens}
                 batchNumber={queue.batchNumber}
                 totalBatches={queue.totalBatches}
+                phase={queue.phase}
                 allDone={!savedPageResults && !queue.isAnalyzing && !queue.error && !hasMore && queue.results.length > 0}
                 onNextPage={() => {
                   setSavedPageResults(null);

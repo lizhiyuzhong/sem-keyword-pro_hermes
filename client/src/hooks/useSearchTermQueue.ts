@@ -29,6 +29,10 @@ export interface QueueState {
   batchNumber: number;
   /** Total batches to process */
   totalBatches: number;
+  /** Current phase: "idle" | "analyzing" | "extracting" | "done" */
+  phase: string;
+  /** Force re-analysis, skip cache */
+  forceRefresh: boolean;
 }
 
 const BATCH_SIZE = 100;
@@ -49,6 +53,8 @@ const initialState: QueueState = {
   lastSkippedCount: 0,
   batchNumber: 0,
   totalBatches: 0,
+  phase: "idle",
+  forceRefresh: false,
 };
 
 // ---------------------------------------------------------------------------
@@ -190,6 +196,8 @@ export function useSearchTermQueue(): UseSearchTermQueueReturn {
         totalTokens: undefined,
         batchNumber: 0,
         totalBatches,
+        phase: "analyzing",
+        forceRefresh: false,
       }));
     },
     [updateQueue]
@@ -217,6 +225,7 @@ export function useSearchTermQueue(): UseSearchTermQueueReturn {
             businessType: current.businessType,
             clientId: current.clientId,
             model: current.model,
+            forceRefresh: current.forceRefresh,
             searchTerms: batch.map((r: SearchTermRow) => ({ term: r.term, matchedKeyword: r.matchedKeyword })),
           });
 
@@ -225,6 +234,8 @@ export function useSearchTermQueue(): UseSearchTermQueueReturn {
             const newIndex = prev.currentIndex + batch.length;
             const isDone = newIndex >= prev.totalToProcess;
             const newBatchNumber = prev.batchNumber + 1;
+            // After last batch, switch to "extracting" phase
+            const phase = isDone ? "extracting" : "analyzing";
 
             if (isDone && prev.clientId !== null) {
               savePageResults(prev.clientId, currentPageIndexRef.current, newResults);
@@ -247,6 +258,7 @@ export function useSearchTermQueue(): UseSearchTermQueueReturn {
               accumulatedNegativeGroups: mergedGroups,
               totalTokens: totalToks,
               batchNumber: newBatchNumber,
+              phase,
               error: null,
             };
           });

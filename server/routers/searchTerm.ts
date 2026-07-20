@@ -175,56 +175,61 @@ async function analyzeSearchTermsBatch(
         extractedNegative: null,
       };
     }
-    const isKeep = found.suggestion === "保留";
-    // Ensure excludeReason is always a non-empty Chinese string
-    let reason = (typeof found.excludeReason === "string" ? found.excludeReason : "").trim();
-    if (!reason) {
-      reason = isKeep
-        ? "三维均匹配：业务方向相符，受众类型匹配，与触发关键字语义一致。"
-        : "该搜索词不符合客户业务方向或受众类型，建议排除。";
-    }
-    // Parse optional per-dimension verdicts (supports pass/fail/na)
+    // Parse per-dimension verdicts
     const parseDim = (raw: any): import("../../shared/types").DimensionVerdict | undefined => {
       if (!raw || typeof raw !== "object") return undefined;
       const status = raw.status === "pass" ? "pass" : raw.status === "fail" ? "fail" : "na";
       const dimReason = typeof raw.reason === "string" && raw.reason.trim() ? raw.reason.trim() : "已短路跳过";
       return { status, reason: dimReason };
     };
+    let dim1 = parseDim(found.dim1);
+    let dim2 = parseDim(found.dim2);
+    let dim3 = parseDim(found.dim3);
+
     // Parse negativeCategory (must be one of 5 fixed labels)
     const VALID_CATEGORIES = ["竞对公司词", "无关业务/产品词", "C端个人消费词", "纯信息/学术词", "触发偏移词"];
     const rawCat = typeof found.negativeCategory === "string" ? found.negativeCategory.trim() : null;
     const negativeCategory = VALID_CATEGORIES.includes(rawCat as string)
       ? (rawCat as import("../../shared/types").NegativeCategory)
       : null;
-    let dim1 = parseDim(found.dim1);
-    let dim2 = parseDim(found.dim2);
-    let dim3 = parseDim(found.dim3);
-
-    // Detect when LLM copies the same reason to all three dimensions (common bug)
-    if (
-      dim1?.status === "fail" &&
-      dim2?.status === "fail" &&
-      dim3?.status === "fail" &&
-      dim1.reason === dim2.reason &&
-      dim2.reason === dim3.reason
-    ) {
-      console.warn(`[SearchTerm] Same-reason detected for "${t.term}" — LLM likely did not analyze independently.`);
-    }
 
     // Enforce short-circuit logic: if dim1 fails, dim2/dim3 must be na
     if (dim1?.status === "fail") {
       dim2 = { status: "na", reason: "已短路跳过：客户类型不符，无需继续分析" };
       dim3 = { status: "na", reason: "已短路跳过：客户类型不符，无需继续分析" };
     } else if (dim2?.status === "fail") {
-      // dim1 passed but dim2 fails — skip dim3
       dim3 = { status: "na", reason: "已短路跳过：业务方向偏移，无需继续分析" };
+    }
+
+    // Compute suggestion from dimensions (don't trust LLM's suggestion field)
+    const dim1Pass = dim1?.status === "pass";
+    const dim2Pass = dim2?.status === "pass";
+    const dim3Pass = dim3?.status === "pass";
+    const computedKeep = dim1Pass && dim2Pass && dim3Pass;
+
+    // Detect LLM laziness: any two active dims with the same reason
+    const reasons = [dim1, dim2, dim3].filter(d => d?.status !== "na").map(d => d?.reason);
+    if (new Set(reasons).size < reasons.length && reasons.length >= 2) {
+      console.warn(`[SearchTerm] Duplicate reasons detected for "${t.term}" — LLM may not have analyzed independently. Reasons: ${JSON.stringify(reasons)}`);
+    }
+
+    // Detect LLM suggestion vs dim computation mismatch
+    if (found.suggestion !== (computedKeep ? "保留" : "排除")) {
+      console.warn(`[SearchTerm] LLM suggestion mismatch for "${t.term}": LLM says "${found.suggestion}", dims say "${computedKeep ? "保留" : "排除"}"`);
+    }
+
+    let reason = (typeof found.excludeReason === "string" ? found.excludeReason : "").trim();
+    if (!reason) {
+      reason = computedKeep
+        ? "三维均匹配：业务方向相符，受众类型匹配，与触发关键字语义一致。"
+        : "该搜索词不符合客户业务方向或受众类型，建议排除。";
     }
 
     return {
       term: t.term,
       matchedKeyword: t.matchedKeyword,
       score: Math.min(100, Math.max(0, Number(found.score) || 0)),
-      suggestion: isKeep ? "保留" : ("排除" as const),
+      suggestion: computedKeep ? "保留" : ("排除" as const),
       excludeReason: reason,
       extractedNegative: found.extractedNegative ?? null,
       negativeCategory,
@@ -426,11 +431,13 @@ export const searchTermRouter = router({
           .max(100, "单次最多分析 100 个搜索字词"),
         /** Per-request model override */
         model: z.string().optional(),
+        /** Skip history cache, force fresh LLM analysis */
+        forceRefresh: z.boolean().optional().default(false),
       })
     )
     .mutation(async ({ ctx, input }) => {
       const { businessDirection, businessType, clientId, searchTerms } = input;
-      const { model } = input;
+      const { model, forceRefresh } = input;
 
       // Reset token tracker for this request
       TokenTracker.reset();
@@ -458,33 +465,36 @@ export const searchTermRouter = router({
       }
 
       // -----------------------------------------------------------------------
-      // L2 Dedup: load history keyed by (term, matchedKeyword)
+      // L2 Dedup: load history (skip if forceRefresh)
       // -----------------------------------------------------------------------
-      const historyMap = await getSearchTermHistory(clientId);
-      const termsToAnalyze = cleanTerms.filter(
-        (t) => !historyMap.has(makeHistoryKey(t.term, t.matchedKeyword))
-      );
-      const skippedCount = cleanTerms.length - termsToAnalyze.length;
+      const historyMap = forceRefresh ? new Map() : await getSearchTermHistory(clientId);
+      const termsToAnalyze = forceRefresh
+        ? cleanTerms
+        : cleanTerms.filter((t) => !historyMap.has(makeHistoryKey(t.term, t.matchedKeyword)));
+      const skippedCount = forceRefresh ? 0 : cleanTerms.length - termsToAnalyze.length;
 
       console.log(
         `[SearchTermDedup] Client ${clientId}: ${cleanTerms.length} total, ${skippedCount} cached, ${termsToAnalyze.length} new`
       );
 
       // -----------------------------------------------------------------------
-      // LLM analysis in batches of 10
+      // LLM analysis: batches of 20, 2 concurrent for speed
       // -----------------------------------------------------------------------
-      const LLM_BATCH = 10;
+      const LLM_BATCH = 20;
+      const CONCURRENCY = 2;
       const freshResults: SearchTermAnalysis[] = [];
 
-      for (let i = 0; i < termsToAnalyze.length; i += LLM_BATCH) {
-        const batch = termsToAnalyze.slice(i, i + LLM_BATCH);
-        const batchResults = await analyzeSearchTermsBatch(
-          batch,
-          businessDirection,
-          businessType,
-          model
+      for (let i = 0; i < termsToAnalyze.length; i += LLM_BATCH * CONCURRENCY) {
+        const concurrentBatches: Array<typeof termsToAnalyze> = [];
+        for (let j = 0; j < CONCURRENCY && i + j * LLM_BATCH < termsToAnalyze.length; j++) {
+          concurrentBatches.push(termsToAnalyze.slice(i + j * LLM_BATCH, i + (j + 1) * LLM_BATCH));
+        }
+        const batchResults = await Promise.all(
+          concurrentBatches.map(batch =>
+            analyzeSearchTermsBatch(batch, businessDirection, businessType, model)
+          )
         );
-        freshResults.push(...batchResults);
+        freshResults.push(...batchResults.flat());
       }
 
       // -----------------------------------------------------------------------

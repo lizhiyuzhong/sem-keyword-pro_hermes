@@ -335,6 +335,8 @@ interface SearchTermResultsProps {
   batchNumber?: number;
   /** Total batches */
   totalBatches?: number;
+  /** Current phase */
+  phase?: string;
 }
 
 export function SearchTermResults({
@@ -357,6 +359,7 @@ export function SearchTermResults({
   allDone,
   batchNumber,
   totalBatches,
+  phase,
 }: SearchTermResultsProps) {
   const keepResults = results.filter((r) => r.suggestion === "保留");
   const excludeResults = results.filter((r) => r.suggestion === "排除");
@@ -698,7 +701,9 @@ export function SearchTermResults({
         {isAnalyzing ? (
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
             <Loader2 className="w-4 h-4 animate-spin" />
-            正在分析第 {batchNumber ?? "?"} / {totalBatches ?? "?"} 批...
+            {phase === "extracting"
+              ? "正在提取智能否词根..."
+              : `正在三维漏斗诊断 · 第 ${batchNumber ?? "?"} / ${totalBatches ?? "?"} 批`}
           </div>
         ) : allDone ? (
           <div className="flex items-center gap-2 text-sm text-apple-green">
