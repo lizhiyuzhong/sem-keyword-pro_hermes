@@ -28,6 +28,28 @@ import type { SearchTermAnalysis, DimensionVerdict } from "../../../shared/types
 // Helpers
 // ---------------------------------------------------------------------------
 
+/** Safe clipboard write with HTTP fallback */
+function copyToClipboard(text: string): Promise<void> {
+  if (navigator.clipboard && window.isSecureContext) {
+    return navigator.clipboard.writeText(text);
+  }
+  return new Promise((resolve, reject) => {
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    ta.style.position = "fixed";
+    ta.style.left = "-9999px";
+    document.body.appendChild(ta);
+    ta.select();
+    try {
+      document.execCommand("copy");
+      resolve();
+    } catch {
+      reject(new Error("Copy failed"));
+    }
+    document.body.removeChild(ta);
+  });
+}
+
 function formatNegativeKeyword(keyword: string, mode: "broad" | "phrase" | "exact"): string {
   if (mode === "phrase") return `"${keyword}"`;
   if (mode === "exact") return `[${keyword}]`;
@@ -309,6 +331,10 @@ interface SearchTermResultsProps {
   tokenUsage?: { total_tokens: number };
   /** All batches completed (no more pages, no errors) */
   allDone: boolean;
+  /** Current batch number (1-indexed) */
+  batchNumber?: number;
+  /** Total batches */
+  totalBatches?: number;
 }
 
 export function SearchTermResults({
@@ -329,6 +355,8 @@ export function SearchTermResults({
   negativeGroups,
   tokenUsage,
   allDone,
+  batchNumber,
+  totalBatches,
 }: SearchTermResultsProps) {
   const keepResults = results.filter((r) => r.suggestion === "保留");
   const excludeResults = results.filter((r) => r.suggestion === "排除");
@@ -351,7 +379,7 @@ export function SearchTermResults({
     const list = keepResults
       .filter((r) => selectedKeep.size === 0 || selectedKeep.has(r.term))
       .map((r) => r.term);
-    navigator.clipboard.writeText(list.join("\n")).then(() => {
+    copyToClipboard(list.join("\n")).then(() => {
       setCopiedKeep(true);
       setTimeout(() => setCopiedKeep(false), 2000);
     });
@@ -361,16 +389,14 @@ export function SearchTermResults({
     const list = excludeResults
       .filter((r) => selectedExclude.size === 0 || selectedExclude.has(r.term))
       .map((r) => formatNegativeKeyword(r.term, negativeMatchMode));
-    navigator.clipboard.writeText(list.join("\n")).then(() => {
+    copyToClipboard(list.join("\n")).then(() => {
       setCopiedExclude(true);
       setTimeout(() => setCopiedExclude(false), 2000);
     });
   }, [excludeResults, selectedExclude, negativeMatchMode]);
 
   const copyRootGroup = useCallback((categoryKey: string, terms: string[]) => {
-    // Copy all terms in this category (broad match — no formatting wrapper)
-    const text = terms.join("\n");
-    navigator.clipboard.writeText(text).then(() => {
+    copyToClipboard(terms.join("\n")).then(() => {
       setCopiedRoots((prev) => ({ ...prev, [categoryKey]: true }));
       setTimeout(() => setCopiedRoots((prev) => ({ ...prev, [categoryKey]: false })), 2000);
     });
@@ -672,7 +698,7 @@ export function SearchTermResults({
         {isAnalyzing ? (
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
             <Loader2 className="w-4 h-4 animate-spin" />
-            分析中...
+            正在分析第 {batchNumber ?? "?"} / {totalBatches ?? "?"} 批...
           </div>
         ) : allDone ? (
           <div className="flex items-center gap-2 text-sm text-apple-green">

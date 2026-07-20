@@ -1126,6 +1126,8 @@ export default function Home() {
                 totalPages={csvParseResult ? Math.max(1, Math.ceil(csvParseResult.rows.length / 100)) : 1}
                 negativeGroups={queue.accumulatedNegativeGroups}
                 tokenUsage={queue.totalTokens}
+                batchNumber={queue.batchNumber}
+                totalBatches={queue.totalBatches}
                 allDone={!savedPageResults && !queue.isAnalyzing && !queue.error && !hasMore && queue.results.length > 0}
                 onNextPage={() => {
                   setSavedPageResults(null);

@@ -25,6 +25,10 @@ export interface QueueState {
   accumulatedNegativeGroups?: Array<{ category: string; description: string; terms: string[] }>;
   /** Total token usage across all batches */
   totalTokens?: { total_tokens: number };
+  /** Current batch number (1-indexed) */
+  batchNumber: number;
+  /** Total batches to process */
+  totalBatches: number;
 }
 
 const BATCH_SIZE = 100;
@@ -43,6 +47,8 @@ const initialState: QueueState = {
   clientId: null,
   model: "deepseek-v4-flash",
   lastSkippedCount: 0,
+  batchNumber: 0,
+  totalBatches: 0,
 };
 
 // ---------------------------------------------------------------------------
@@ -165,6 +171,7 @@ export function useSearchTermQueue(): UseSearchTermQueueReturn {
       currentPageIndexRef.current = pageIndex;
       abortRef.current = false;
       const activeRows = rows.filter((r) => !r.excluded);
+      const totalBatches = Math.ceil(activeRows.length / BATCH_SIZE);
       updateQueue(() => ({
         allRows: activeRows,
         currentIndex: 0,
@@ -181,6 +188,8 @@ export function useSearchTermQueue(): UseSearchTermQueueReturn {
         lastSkippedCount: 0,
         accumulatedNegativeGroups: undefined,
         totalTokens: undefined,
+        batchNumber: 0,
+        totalBatches,
       }));
     },
     [updateQueue]
@@ -215,6 +224,7 @@ export function useSearchTermQueue(): UseSearchTermQueueReturn {
             const newResults = [...prev.results, ...result.results];
             const newIndex = prev.currentIndex + batch.length;
             const isDone = newIndex >= prev.totalToProcess;
+            const newBatchNumber = prev.batchNumber + 1;
 
             if (isDone && prev.clientId !== null) {
               savePageResults(prev.clientId, currentPageIndexRef.current, newResults);
@@ -236,6 +246,7 @@ export function useSearchTermQueue(): UseSearchTermQueueReturn {
               lastSkippedCount: result.skippedCount ?? 0,
               accumulatedNegativeGroups: mergedGroups,
               totalTokens: totalToks,
+              batchNumber: newBatchNumber,
               error: null,
             };
           });
