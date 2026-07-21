@@ -261,7 +261,25 @@ export default function Home() {
     startAutoAnalysis(analyzeSearchTermsMutation.mutateAsync as any);
   }, [startAutoAnalysis, analyzeSearchTermsMutation.mutateAsync]);
 
-  // Handler: reset CSV mode
+  // Handler: re-analyze from scratch (skip cache)
+  const handleReanalyzeSearchTerms = useCallback(() => {
+    if (!urlClientId || !user || !csvParseResult) return;
+    resetQueue();
+    setSavedPageResults(null);
+    initQueue({
+      rows: csvParseResult.rows,
+      businessDirection: businessDirection.trim(),
+      businessType,
+      clientId: urlClientId,
+      initialQuota: { count: user.daily_keyword_count ?? 0, limit: user.daily_keyword_limit ?? 1000 },
+      pageIndex: csvCurrentPage,
+      forceRefresh: true,
+    });
+    setShowSearchTermResults(true);
+    setTimeout(() => {
+      startAutoAnalysis(analyzeSearchTermsMutation.mutateAsync as any);
+    }, 50);
+  }, [urlClientId, user, csvParseResult, businessDirection, businessType, initQueue, startAutoAnalysis, analyzeSearchTermsMutation.mutateAsync, resetQueue, csvCurrentPage]);
   const handleResetSearchTermMode = useCallback(() => {
     setCsvParseResult(null);
     setShowSearchTermResults(false);
@@ -1122,6 +1140,7 @@ export default function Home() {
                 error={savedPageResults ? null : queue.error}
                 onContinue={handleContinueSearchTermAnalysis}
                 onReset={handleResetSearchTermMode}
+                onReanalyze={handleReanalyzeSearchTerms}
                 currentPage={csvCurrentPage}
                 totalPages={csvParseResult ? Math.max(1, Math.ceil(csvParseResult.rows.length / 100)) : 1}
                 negativeGroups={queue.accumulatedNegativeGroups}

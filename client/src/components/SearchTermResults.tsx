@@ -18,6 +18,7 @@ import {
   AlertTriangle,
   Copy,
   Check,
+  RefreshCw,
   Lightbulb,
   ShieldAlert,
 } from "lucide-react";
@@ -322,6 +323,8 @@ interface SearchTermResultsProps {
   error: string | null;
   onContinue: () => void;
   onReset: () => void;
+  /** Re-run analysis from scratch (skip cache) */
+  onReanalyze: () => void;
   currentPage: number;
   totalPages: number;
   onNextPage: () => void;
@@ -351,6 +354,7 @@ export function SearchTermResults({
   error,
   onContinue,
   onReset,
+  onReanalyze,
   currentPage,
   totalPages,
   onNextPage,
@@ -694,9 +698,17 @@ export function SearchTermResults({
 
       {/* Continue / loading / done */}
       <div className="flex items-center justify-between pt-2 border-t border-border/30">
-        <Button variant="ghost" size="sm" onClick={onReset} disabled={isAnalyzing}>
-          重新上传
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button variant="ghost" size="sm" onClick={onReset} disabled={isAnalyzing}>
+            重新上传
+          </Button>
+          <Button variant="ghost" size="sm" onClick={onReanalyze} disabled={isAnalyzing}
+            className="text-amber-600 hover:text-amber-700"
+            title="跳过缓存，重新分析所有字词">
+            <RefreshCw className="w-3.5 h-3.5 mr-1" />
+            重新分析
+          </Button>
+        </div>
 
         {isAnalyzing ? (
           <div className="flex items-center gap-2 text-sm text-muted-foreground">

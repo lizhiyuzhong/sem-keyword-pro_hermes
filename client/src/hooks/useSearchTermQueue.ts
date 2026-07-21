@@ -131,6 +131,8 @@ export interface UseSearchTermQueueReturn {
     clientId: number;
     initialQuota: { count: number; limit: number };
     pageIndex: number;
+    /** Skip history cache */
+    forceRefresh?: boolean;
   }) => void;
   /** Start auto-analysis: loops through all pages until done or error/out of quota */
   startAutoAnalysis: (
@@ -166,13 +168,14 @@ export function useSearchTermQueue(): UseSearchTermQueueReturn {
   }, []);
 
   const initQueue = useCallback(
-    ({ rows, businessDirection, businessType, clientId, initialQuota, pageIndex }: {
+    ({ rows, businessDirection, businessType, clientId, initialQuota, pageIndex, forceRefresh }: {
       rows: SearchTermRow[];
       businessDirection: string;
       businessType: "B2B" | "B2C";
       clientId: number;
       initialQuota: { count: number; limit: number };
       pageIndex: number;
+      forceRefresh?: boolean;
     }) => {
       currentPageIndexRef.current = pageIndex;
       abortRef.current = false;
@@ -197,7 +200,7 @@ export function useSearchTermQueue(): UseSearchTermQueueReturn {
         batchNumber: 0,
         totalBatches,
         phase: "analyzing",
-        forceRefresh: false,
+        forceRefresh: forceRefresh ?? false,
       }));
     },
     [updateQueue]
