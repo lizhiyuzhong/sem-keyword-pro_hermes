@@ -50,61 +50,17 @@ async function analyzeSearchTermsBatch(
   const MAX_RETRIES = 2;
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
     try {
-      const dimSchema = {
-        type: "object" as const,
-        properties: {
-          status: { type: "string" as const, enum: ["pass", "fail", "na"] },
-          reason: { type: "string" as const },
-        },
-        required: ["status", "reason"],
-        additionalProperties: false,
-      };
       response = await invokeLLM({
         modelOverride: model,
         messages: [
           {
             role: "system",
             content:
-              "你是一位专业的 SEM 搜索字词诊断分析师。请严格按照 JSON Schema 返回分析结果，每条记录必须包含 dim1/dim2/dim3 三个独立维度对象字段，每个维度有 status（pass/fail/na）和 reason（中文说明）两个子字段。",
+              `你是 Google Ads SEM 优化师。你必须返回一个 JSON 对象：{"results":[{ "term":"原词","score":0-100,"suggestion":"保留|排除","excludeReason":"【维度N-标签】理由","negativeCategory":"竞对公司词|无关业务/产品词|C端个人消费词|纯信息/学术词|触发偏移词|null","dim1":{"status":"pass|fail|na","reason":"中文"},"dim2":{"status":"pass|fail|na","reason":"中文"},"dim3":{"status":"pass|fail|na","reason":"中文"}}]}。dim1/2/3 的 reason 必须各不相同。dim fail 时后续 dim 设为 na、reason 为"已短路跳过"。只输出 JSON，无其他文字。`,
           },
           { role: "user", content: prompt },
         ],
-        response_format: {
-          type: "json_schema",
-          json_schema: {
-            name: "search_term_analysis",
-            strict: true,
-            schema: {
-              type: "object",
-              properties: {
-                results: {
-                  type: "array",
-                  items: {
-                    type: "object",
-                    properties: {
-                      term: { type: "string" },
-                      score: { type: "integer" },
-                      suggestion: { type: "string", enum: ["保留", "排除"] },
-                      excludeReason: { type: "string" },
-                      extractedNegative: { type: ["string", "null"] },
-                      negativeCategory: {
-                        type: ["string", "null"],
-                        enum: ["竞对公司词", "无关业务/产品词", "C端个人消费词", "纯信息/学术词", "触发偏移词", null],
-                      },
-                      dim1: dimSchema,
-                      dim2: dimSchema,
-                      dim3: dimSchema,
-                    },
-                    required: ["term", "score", "suggestion", "excludeReason", "extractedNegative", "negativeCategory", "dim1", "dim2", "dim3"],
-                    additionalProperties: false,
-                  },
-                },
-              },
-              required: ["results"],
-              additionalProperties: false,
-            },
-          },
-        },
+        response_format: { type: "json_object" },
       });
       break; // success
     } catch (err: any) {
@@ -270,7 +226,7 @@ async function extractSearchTermNegatives(
       messages: [
         {
           role: "system",
-          content: "SEM否词分析师。严格JSON输出，中文。",
+          content: "SEM否词策略分析师。返回JSON：{\"groups\":[{\"category\":\"类名\",\"description\":\"简述\",\"terms\":[\"词根\"]}]}。只输出JSON，无其他文字。",
         },
         {
           role: "user",
@@ -279,38 +235,9 @@ async function extractSearchTermNegatives(
 ${termList}
 
 提取共性词根，按5类分组（每类≤15个，去重，不翻译）：
-竞对公司词|无关业务/产品词|C端个人消费词|纯信息/学术词|触发偏移词
-
-JSON: {"groups":[{"category":"类名","description":"简述","terms":["根1"]}]}`,
-        },
+竞对公司词|无关业务/产品词|C端个人消费词|纯信息/学术词|触发偏移词`},
       ],
-      response_format: {
-        type: "json_schema",
-        json_schema: {
-          name: "st_neg",
-          strict: true,
-          schema: {
-            type: "object",
-            properties: {
-              groups: {
-                type: "array",
-                items: {
-                  type: "object",
-                  properties: {
-                    category: { type: "string" },
-                    description: { type: "string" },
-                    terms: { type: "array", items: { type: "string" } },
-                  },
-                  required: ["category", "description", "terms"],
-                  additionalProperties: false,
-                },
-              },
-            },
-            required: ["groups"],
-            additionalProperties: false,
-          },
-        },
-      },
+      response_format: { type: "json_object" },
     });
 
     const content = response.choices[0]?.message?.content;

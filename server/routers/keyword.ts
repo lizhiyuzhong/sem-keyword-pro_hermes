@@ -53,7 +53,7 @@ async function analyzeKeywordSemantics(
   const systemMsg = {
     role: "system" as const,
     content:
-      "你是一位专业的 SEM 关键词语义分析师。请严格按照 JSON 格式返回分析结果，不要包含任何其他文字或 markdown 标记。所有文字字段（reasoning、searchSummary）必须使用中文撰写，禁止使用英文。",
+      "你是一位专业的 SEM 关键词语义分析师。你必须返回严格 JSON：{\"searchSummary\":\"中文50字\",\"recommendation\":\"keep|exclude\",\"businessTypeMatch\":true|false,\"businessDirectionMatch\":true|false,\"confidence\":0-100,\"reasoning\":\"中文理由\"}。只输出 JSON，不要 markdown 标记。所有文字必须中文。",
   };
   const userMsg = { role: "user" as const, content: prompt };
   const respFmt = {
@@ -193,7 +193,7 @@ async function extractNegativeInsights(
         {
           role: "system",
           content:
-            "你是一位资深的 Google Ads SEM 优化专家，擅长否词策略分析和优化总结。请严格按照 JSON 格式返回结果，所有文字使用中文。",
+            "SEM否词策略分析师。返回严格JSON：{\"groups\":[{\"category\":\"类名\",\"description\":\"20字内\",\"terms\":[\"词根\"]}],\"overallSummary\":\"100字总结\"}。只输出JSON，所有文字中文。",
         },
         {
           role: "user",
