@@ -33,6 +33,16 @@ LLM_MODEL=deepseek-v4-flash
 DATABASE_URL=mysql://...          # TiDB/MySQL 连接。不填则历史缓存、客户档案不可用
 ```
 
+### 开发数据库（TiDB Cloud）
+
+| 字段 | 值 |
+|------|-----|
+| Host | `gateway04.us-east-1.prod.aws.tidbcloud.com` |
+| Port | `4000` |
+| Database | `FWezyQxaFRRAmwFVkBuUGV` |
+| SSL | `{"rejectUnauthorized":true}` |
+| 连接串 | 见 `.env` 文件（已 gitignore）
+
 ## 首次启动验证
 
 **Codex 必须在开始任何工作前执行以下自检**。如果任何一项失败，不要继续，先向用户报告缺失项。

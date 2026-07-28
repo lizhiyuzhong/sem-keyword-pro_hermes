@@ -33,6 +33,8 @@ export interface QueueState {
   phase: string;
   /** Force re-analysis, skip cache */
   forceRefresh: boolean;
+  /** Request ID for server-side progress tracking */
+  requestId: string;
 }
 
 const BATCH_SIZE = 100;
@@ -51,10 +53,11 @@ const initialState: QueueState = {
   clientId: null,
   model: "deepseek-v4-flash",
   lastSkippedCount: 0,
-  batchNumber: 0,
+  batchNumber: 1,
   totalBatches: 0,
   phase: "idle",
   forceRefresh: false,
+  requestId: "",
 };
 
 // ---------------------------------------------------------------------------
@@ -201,6 +204,7 @@ export function useSearchTermQueue(): UseSearchTermQueueReturn {
         totalBatches,
         phase: "analyzing",
         forceRefresh: forceRefresh ?? false,
+        requestId: `req_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
       }));
     },
     [updateQueue]
@@ -229,6 +233,7 @@ export function useSearchTermQueue(): UseSearchTermQueueReturn {
             clientId: current.clientId,
             model: current.model,
             forceRefresh: current.forceRefresh,
+            requestId: current.requestId,
             searchTerms: batch.map((r: SearchTermRow) => ({ term: r.term, matchedKeyword: r.matchedKeyword })),
           });
 
@@ -272,7 +277,7 @@ export function useSearchTermQueue(): UseSearchTermQueueReturn {
             const rem = updated.dailyKeywordLimit - updated.dailyKeywordCount;
             const nextSize = Math.min(BATCH_SIZE, updated.totalToProcess - updated.currentIndex);
             if (rem >= nextSize || updated.dailyKeywordLimit === 0) {
-              setTimeout(() => runBatch(), 300);
+              setTimeout(() => runBatch(), 100);
             }
           }
         } catch (err: any) {

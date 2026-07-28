@@ -340,6 +340,13 @@ interface SearchTermResultsProps {
   totalBatches?: number;
   /** Current phase */
   phase?: string;
+  /** LLM batch-level progress from server polling */
+  llmProgress?: {
+    phase: string;
+    totalLLMBatches: number;
+    completedLLMBatches: number;
+    batchStatus: Array<{ index: number; status: "pending" | "running" | "done" }>;
+  } | null;
 }
 
 export function SearchTermResults({
@@ -364,6 +371,7 @@ export function SearchTermResults({
   batchNumber,
   totalBatches,
   phase,
+  llmProgress,
 }: SearchTermResultsProps) {
   const keepResults = results.filter((r) => r.suggestion === "保留");
   const excludeResults = results.filter((r) => r.suggestion === "排除");
@@ -431,6 +439,29 @@ export function SearchTermResults({
             )}
           </span>
         </div>
+        {/* LLM batch progress dots */}
+        {llmProgress && llmProgress.totalLLMBatches > 0 && (
+          <div className="flex items-center gap-1 flex-wrap">
+            {llmProgress.batchStatus.map((bs) => (
+              <div
+                key={bs.index}
+                className={`w-2.5 h-2.5 rounded-full transition-colors duration-300 ${
+                  bs.status === "done"
+                    ? "bg-apple-green"
+                    : bs.status === "running"
+                    ? "bg-primary animate-pulse"
+                    : "bg-muted-foreground/20"
+                }`}
+                title={`LLM 批次 ${bs.index + 1}/${llmProgress.totalLLMBatches} - ${
+                  bs.status === "done" ? "已完成" : bs.status === "running" ? "分析中" : "等待中"
+                }`}
+              />
+            ))}
+            <span className="ml-2 text-[10px] text-muted-foreground">
+              LLM {llmProgress.completedLLMBatches}/{llmProgress.totalLLMBatches} 批
+            </span>
+          </div>
+        )}
         <div className="h-2 bg-muted rounded-full overflow-hidden">
           <motion.div
             className="h-full bg-primary rounded-full"
@@ -715,7 +746,7 @@ export function SearchTermResults({
             <Loader2 className="w-4 h-4 animate-spin" />
             {phase === "extracting"
               ? "正在提取智能否词根..."
-              : `正在三维漏斗诊断 · 第 ${batchNumber ?? "?"} / ${totalBatches ?? "?"} 批`}
+              : `正在分析第 ${batchNumber ?? "?"}/${totalBatches ?? "?"} 组（每组最多 100 词）`}
           </div>
         ) : allDone ? (
           <div className="flex items-center gap-2 text-sm text-apple-green">

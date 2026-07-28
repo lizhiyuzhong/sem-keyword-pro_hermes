@@ -1,6 +1,9 @@
 import { z } from "zod";
 import { and, eq, inArray } from "drizzle-orm";
 import { createHash } from "crypto";
+import { readFileSync } from "fs";
+import { join, dirname } from "path";
+import { fileURLToPath } from "url";
 import { protectedProcedure, publicProcedure, router } from "../_core/trpc";
 import { invokeLLM, TokenTracker } from "../_core/llm";
 import { getDb } from "../db";
@@ -167,6 +170,7 @@ async function extractNegativeInsights(
   results: KeywordAnalysis[],
   businessDirection: string,
   businessType: BusinessType,
+  clientBrand: string,
   model?: string
 ): Promise<NegativeInsights & { overallSummary: string }> {
   const excluded = results.filter((r) => r.recommendation === "exclude");
@@ -178,89 +182,71 @@ async function extractNegativeInsights(
     return { groups: [], hasInsights: false, overallSummary: fallbackSummary };
   }
 
+  // Group excluded keywords with their reasoning
   const excludedList = excluded
-    .map((r) => `"${r.keyword}"（原因：${r.reasoning.slice(0, 60)}）`)
+    .map((r) => `- "${r.keyword}"（原因：${r.reasoning.slice(0, 80)}）`)
     .join("\n");
 
   const summaryLines = results
     .map((r) => `"${r.keyword}": ${r.recommendation === "keep" ? "保留" : "排除"}`)
     .join("、");
 
+  const systemPrompt = `你是 SEM 否词策略分析师，专精 Google Ads 否定关键词配置。你的任务是基于已排除的关键词，提取可复用的否定关键词词根，并撰写分析总结。
+
+# 词根提取规则（必须严格遵守）
+
+1. 词根是可用于否定关键词匹配的**核心词或短语**，长度通常 2-8 个中文字或 1-3 个英文词。
+2. **严禁提取客户业务核心词**：客户业务方向是「${businessDirection}」，提取的词根绝对不能包含客户业务的核心关键词。例如客户做锂电池，词根不能包含"锂电池"、"电池"、"lithium"、"battery"——否则会误杀正常流量。
+3. **严禁提取客户品牌名**：客户品牌/公司名是「${clientBrand}」，词根中绝对不能出现客户品牌名或其变体。
+4. 词根提取目标：用一个词根覆盖尽可能多的同类排除词。例如排除词包含"tesla battery""byd energy""catl supplier"，应提取"tesla""byd""catl"而非"battery""energy""supplier"。
+5. 词根要具体、可操作，不是泛化描述。好词根："diy""home use""recycling"；坏词根："不相关""其他"。
+6. 每类最多 15 个词根，去重，不翻译英文。
+7. 只输出 JSON，无任何其他文字。
+
+# 否词分类
+1. 竞对品牌词/无关品牌词：竞争对手或无关品牌名称
+2. 无关产品词：与客户业务完全不相关的产品类别词
+3. 无关行业词：指向完全不同行业的词汇
+4. 其他无关词：其他可批量排除的词根
+
+# 输出格式
+返回 JSON：{"groups":[{"category":"分类名","description":"20字内描述","terms":["词根1","词根2"]}],"overallSummary":"100字以内的优化总结，说明哪些方向需要重点加否词"}
+
+# Few-Shot 示例
+
+输入：客户锂电池 B2B 业务，品牌「海辰能源」，排除词：
+- "tesla powerwall battery"（竞对品牌）
+- "byd energy storage"（竞对品牌）
+- "diy battery pack"（C端个人消费）
+
+输出：
+{"groups":[{"category":"竞对品牌词","description":"排除竞品品牌名，防止竞品截流","terms":["tesla","byd","powerwall"]},{"category":"C端个人消费词","description":"排除C端DIY场景词根","terms":["diy","for home"]}],"overallSummary":"共分析N个关键词，M个建议保留，K个建议排除。建议重点对竞品品牌词和C端个人消费词添加广泛匹配否词，避免无效点击。"}`;
+
   try {
     const response = await invokeLLM({
       modelOverride: model,
       messages: [
-        {
-          role: "system",
-          content:
-            "SEM否词策略分析师。返回严格JSON：{\"groups\":[{\"category\":\"类名\",\"description\":\"20字内\",\"terms\":[\"词根\"]}],\"overallSummary\":\"100字总结\"}。只输出JSON，所有文字中文。",
-        },
+        { role: "system", content: systemPrompt },
         {
           role: "user",
-          content: `请完成两项任务：
-
-**任务1：否词提取**  
-分析以下被排除的关键词，提取可用于广泛匹配否词的核心词根，按类别分组。
-
-**任务2：总体分析总结**  
-基于全部 ${results.length} 个关键词结果撰写一段简洁的总结（100字以内，纯文本，无markdown）。
-
-客户业务：${businessDirection}（${businessType}）
+          content: `客户业务：${businessDirection}（${businessType}）
+客户品牌：${clientBrand}
 共 ${results.length} 个关键词，${keepCount} 个建议保留，${excludeCount} 个建议排除。明细：${summaryLines}
 
 被排除的关键词：
 ${excludedList}
 
-否词分类规则：
-1. 竞对品牌词/无关品牌词：关键词中出现的竞争对手或无关品牌名称
-2. 无关产品词：与客户业务完全不相关的产品类别词
-3. 无关行业词：指向完全不同行业的词汇
-4. 其他无关词：其他可批量排除的词根
-
-重要规则（必须严格遵守）：
-1. 只提取词根，不要包含整个关键词。
-2. 严禁翻译：词根必须保持与原关键词完全相同的语言形式。
-3. 整体总结请输出优化建议，说明哪些方向需要重点加否词。
-
-返回 JSON 格式：
-{"groups":[{"category":"分类名","description":"排除原因（20字内）","terms":["词根1","词根2"]}],"overallSummary":"一段优化总结文案，100字以内"}`,
+请根据上述词根提取规则，提取否定关键词词根并撰写总结。`,
         },
       ],
-      response_format: {
-        type: "json_schema",
-        json_schema: {
-          name: "negative_insights_with_summary",
-          strict: true,
-          schema: {
-            type: "object",
-            properties: {
-              groups: {
-                type: "array",
-                items: {
-                  type: "object",
-                  properties: {
-                    category: { type: "string" },
-                    description: { type: "string" },
-                    terms: { type: "array", items: { type: "string" } },
-                  },
-                  required: ["category", "description", "terms"],
-                  additionalProperties: false,
-                },
-              },
-              overallSummary: { type: "string" },
-            },
-            required: ["groups", "overallSummary"],
-            additionalProperties: false,
-          },
-        },
-      },
+      response_format: { type: "json_object" },
     });
 
-    const content = response.choices[0]?.message?.content;
-    const parsed =
-      typeof content === "string"
-        ? JSON.parse(content)
-        : JSON.parse((content as any)?.[0]?.text || '{"groups":[],"overallSummary":""}');
+    const respContent = response.choices[0]?.message?.content;
+    const raw = typeof respContent === "string" ? respContent : (respContent as any)?.[0]?.text || '{"groups":[],"overallSummary":""}';
+    // Strip markdown code fences
+    const cleaned = raw.replace(/^```json\s*/i, "").replace(/\s*```\s*$/, "").trim();
+    const parsed = JSON.parse(cleaned);
 
     const groups: NegativeInsightGroup[] = (parsed.groups || [])
       .filter((g: any) => Array.isArray(g.terms) && g.terms.length > 0)
@@ -348,7 +334,8 @@ async function setCachedReport(
 // Client keyword history helpers
 // ---------------------------------------------------------------------------
 
-/** Fetch all historical keyword analyses for a client (keyed by lowercase keyword) */
+/** Fetch all historical keyword analyses for a client (keyed by lowercase keyword).
+ * Handles both KeywordAnalysis (manual) and SearchTermAnalysis (CSV) shapes. */
 async function getClientHistory(
   clientId: number
 ): Promise<Map<string, KeywordAnalysis>> {
@@ -362,7 +349,28 @@ async function getClientHistory(
       .where(eq(clientKeywordHistory.clientId, clientId));
     for (const row of rows) {
       try {
-        const analysis = JSON.parse(row.analysisResultJson) as KeywordAnalysis;
+        const raw = JSON.parse(row.analysisResultJson);
+        let analysis: KeywordAnalysis;
+        // Detect shape: SearchTermAnalysis has "term", KeywordAnalysis has "keyword"
+        if (raw.term !== undefined && raw.suggestion !== undefined) {
+          // Convert SearchTermAnalysis → KeywordAnalysis
+          const isKeep = raw.suggestion === "保留";
+          analysis = {
+            keyword: raw.term || row.keyword,
+            recommendation: isKeep ? "keep" : "exclude",
+            businessTypeMatch: raw.dim1?.status === "pass",
+            businessDirectionMatch: raw.dim2?.status === "pass",
+            confidence: raw.score ?? (isKeep ? 80 : 20),
+            reasoning: raw.excludeReason || (isKeep ? "三维漏斗分析通过" : "三维漏斗分析未通过"),
+            searchResults: [],
+            searchSummary: "",
+          };
+        } else if (raw.keyword !== undefined) {
+          // Native KeywordAnalysis shape
+          analysis = raw as KeywordAnalysis;
+        } else {
+          continue; // unknown shape, skip
+        }
         map.set(row.keyword.toLowerCase(), analysis);
       } catch {
         // skip malformed rows
@@ -537,7 +545,19 @@ export const keywordRouter = router({
       // -----------------------------------------------------------------------
       // Summary + negative insights (single combined LLM call, saves tokens)
       // -----------------------------------------------------------------------
-      const combined = await extractNegativeInsights(allResults, businessDirection, businessType, model);
+      // Fetch client brand name for negative keyword extraction
+      let clientBrand = businessDirection; // fallback
+      if (clientId) {
+        try {
+          const db = await getDb();
+          if (db) {
+            const [client] = await db.select({ name: clients.name }).from(clients).where(eq(clients.id, clientId)).limit(1);
+            if (client?.name) clientBrand = client.name;
+          }
+        } catch { /* best-effort */ }
+      }
+
+      const combined = await extractNegativeInsights(allResults, businessDirection, businessType, clientBrand, model);
 
       const report: AnalysisReport = {
         input: { businessDirection, businessType, keywords: cleanKeywords },
@@ -604,17 +624,34 @@ export const keywordRouter = router({
     }),
 
   getReadme: publicProcedure.query(async () => {
+    // Try DB first
     try {
       const db = await getDb();
-      const rows = await db!
-        .select()
-        .from(appSettings)
-        .where(eq(appSettings.key, "readme"));
-      const content = rows[0]?.value ?? "";
-      return { content };
-    } catch (error) {
-      console.error("[README Get] Error:", error);
-      throw new Error("Failed to read README");
+      if (db) {
+        const rows = await db
+          .select()
+          .from(appSettings)
+          .where(eq(appSettings.key, "readme"));
+        const dbContent = rows[0]?.value ?? "";
+        if (dbContent) {
+          console.log('[getReadme] Serving from DB');
+          return { content: dbContent };
+        }
+      }
+    } catch (dbError) {
+      console.warn('[getReadme] DB read failed, falling back to file:', dbError);
+    }
+    // Fallback: read from local file
+    try {
+      const __filename = fileURLToPath(import.meta.url);
+    const __dirname = dirname(__filename);
+    const filePath = join(__dirname, "../prompts/usage-guide.md");
+      const fileContent = readFileSync(filePath, "utf-8");
+      console.log('[getReadme] Serving from file:', filePath);
+      return { content: fileContent };
+    } catch (fileError) {
+      console.error('[getReadme] File read also failed:', fileError);
+      return { content: "" };
     }
   }),
 });

@@ -129,6 +129,7 @@ export default function Home() {
   // Search Term (CSV) mode state
   const [csvParseResult, setCsvParseResult] = useState<CSVParseResult | null>(null);
   const [showSearchTermResults, setShowSearchTermResults] = useState(false);
+  const [llmProgress, setLlmProgress] = useState<any>(null);
   const [csvCurrentPage, setCsvCurrentPage] = useState(0); // 0-indexed, tracks which page was last analyzed
   const { queue, initQueue, startAutoAnalysis, resetQueue, hasMore, remainingQuota, canContinue, loadSavedPage, getSavedPageList } = useSearchTermQueue();
   // Saved page results for viewing previously analyzed pages without re-running
@@ -229,6 +230,10 @@ export default function Home() {
 
   // Search Term mutation
   const analyzeSearchTermsMutation = trpc.searchTerm.analyzeSearchTerms.useMutation();
+  const progressQuery = trpc.searchTerm.getAnalysisProgress.useQuery(
+    { requestId: queue.requestId },
+    { enabled: queue.isAnalyzing && !!queue.requestId, refetchInterval: 800 }
+  );
 
   // Handler: CSV parsed → show preview
   const handleCsvParsed = useCallback((result: CSVParseResult) => {
@@ -280,6 +285,13 @@ export default function Home() {
       startAutoAnalysis(analyzeSearchTermsMutation.mutateAsync as any);
     }, 50);
   }, [urlClientId, user, csvParseResult, businessDirection, businessType, initQueue, startAutoAnalysis, analyzeSearchTermsMutation.mutateAsync, resetQueue, csvCurrentPage]);
+  // Sync llmProgress from polling query
+  useEffect(() => {
+    if (progressQuery.data) {
+      setLlmProgress(progressQuery.data);
+    }
+  }, [progressQuery.data]);
+
   const handleResetSearchTermMode = useCallback(() => {
     setCsvParseResult(null);
     setShowSearchTermResults(false);
@@ -492,6 +504,12 @@ export default function Home() {
   const handlePasswordSubmit = () => {
     if (!editPassword.trim()) {
       toast.error("请输入密码");
+      return;
+    }
+    // 本地验证密码（与服务端硬编码一致）
+    if (editPassword !== "daniel") {
+      toast.error("密码无效");
+      setEditPassword("");
       return;
     }
     setIsEditMode(true);
@@ -1148,6 +1166,7 @@ export default function Home() {
                 batchNumber={queue.batchNumber}
                 totalBatches={queue.totalBatches}
                 phase={queue.phase}
+                llmProgress={llmProgress}
                 allDone={!savedPageResults && !queue.isAnalyzing && !queue.error && !hasMore && queue.results.length > 0}
                 onNextPage={() => {
                   setSavedPageResults(null);
