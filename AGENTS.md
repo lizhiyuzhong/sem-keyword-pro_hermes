@@ -16,14 +16,51 @@ SEM 关键词筛选工具，帮助 SEM 优化师判断搜索词是否匹配客�
 
 ## 环境变量
 
-开发环境需创建 `.env` 文件（已 gitignore），参考 `.env.example`。关键变量：
+开发环境必须创建 `.env` 文件（已 gitignore），复制 `.env.example` 并填入真实值。
+
+**必填变量**（缺一不可，否则分析功能无法使用）：
 
 ```
-DEV_MODE=true                  # 跳过 OAuth，注入 mock admin
-LLM_API_KEY=**                 # DeepSeek API Key
-LLM_MODEL=deepseek-v4-flash    # 默认模型
-DATABASE_URL=mysql://...       # MySQL 连接（开发可空，部分功能不可用）
+DEV_MODE=true
+LLM_API_URL=https://api.deepseek.com
+LLM_API_KEY=sk-***               # DeepSeek API Key
+LLM_MODEL=deepseek-v4-flash
 ```
+
+**可选变量**（不填则部分功能不可用）：
+
+```
+DATABASE_URL=mysql://...          # TiDB/MySQL 连接。不填则历史缓存、客户档案不可用
+```
+
+## 首次启动验证
+
+```bash
+# 1. 确认 .env 存在且必填变量已设置
+cat .env | grep -E "DEV_MODE|LLM_API_KEY|LLM_API_URL|LLM_MODEL"
+
+# 2. 启动 dev server
+pnpm dev
+
+# 3. 另开终端，验证 LLM API 连通性
+curl -s https://api.deepseek.com/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $(grep LLM_API_KEY .env | cut -d= -f2)" \
+  -d '{"model":"deepseek-chat","messages":[{"role":"user","content":"hi"}],"max_tokens":10}' \
+  | grep -q '"choices"' && echo "LLM API OK" || echo "LLM API FAILED"
+
+# 4. 打开 http://localhost:3000
+#    应看到完整表单（无登录弹窗）
+#    输入业务方向 + 关键词 → 点"开始智能分析" → 应正常返回结果
+```
+
+**常见错误**：
+
+| 错误 | 原因 | 解决 |
+|------|------|------|
+| `fetch failed` | LLM_API_KEY 未设置或无效 | 检查 .env 中 LLM_API_KEY |
+| 页面 502 | dev server 未启动 | 运行 `pnpm dev` |
+| 数据库连接失败 | DATABASE_URL 未设置 | 不设也可用，但缓存功能不可用 |
 
 ## 本地开发
 
