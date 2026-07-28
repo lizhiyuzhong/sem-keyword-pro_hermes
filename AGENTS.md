@@ -79,6 +79,12 @@ curl -s https://api.deepseek.com/v1/chat/completions \
 ## 本地开发
 
 ```bash
+# 首次 clone（SSH 方式，需先配好 SSH Key）
+git clone git@github.com:lizhiyuzhong/sem-keyword-pro_hermes.git
+
+# 如果用 HTTPS，需配 Personal Access Token
+# git remote set-url origin https://<username>:<token>@github.com/...
+
 pnpm install
 pnpm dev          # 启动开发服务器，默认端口 3000
 ```
