@@ -35,23 +35,27 @@ DATABASE_URL=mysql://...          # TiDB/MySQL 连接。不填则历史缓存、
 
 ## 首次启动验证
 
+**Codex 必须在开始任何工作前执行以下自检**。如果任何一项失败，不要继续，先向用户报告缺失项。
+
 ```bash
-# 1. 确认 .env 存在且必填变量已设置
-cat .env | grep -E "DEV_MODE|LLM_API_KEY|LLM_API_URL|LLM_MODEL"
+# 1. 确认 .env 存在
+test -f .env || echo "MISSING: .env 文件不存在，请运行 cp .env.example .env"
 
-# 2. 启动 dev server
-pnpm dev
+# 2. 检查必填变量（不输出实际值，只检查是否为空）
+grep -q "^LLM_API_KEY=$" .env 2>/dev/null && echo "MISSING: LLM_API_KEY 为空，请填入 DeepSeek API Key"
+grep -q "^LLM_API_KEY=sk-" .env 2>/dev/null && echo "OK: LLM_API_KEY 已设置" || true
 
-# 3. 另开终端，验证 LLM API 连通性
+# 3. 确认 dev server 能启动
+pnpm dev &
+sleep 5
+curl -s -o /dev/null -w "%{http_code}" http://localhost:3000 | grep -q "200" && echo "OK: dev server 正常" || echo "FAIL: dev server 未响应"
+
+# 4. 验证 LLM API 连通（不输出 key）
 curl -s https://api.deepseek.com/v1/chat/completions \
   -H "Content-Type: application/json" \
-  -H "Authorization: Bearer $(grep LLM_API_KEY .env | cut -d= -f2)" \
-  -d '{"model":"deepseek-chat","messages":[{"role":"user","content":"hi"}],"max_tokens":10}' \
-  | grep -q '"choices"' && echo "LLM API OK" || echo "LLM API FAILED"
-
-# 4. 打开 http://localhost:3000
-#    应看到完整表单（无登录弹窗）
-#    输入业务方向 + 关键词 → 点"开始智能分析" → 应正常返回结果
+  -H "Authorization: Bearer $(grep '^LLM_API_KEY=' .env | head -1 | cut -d= -f2-)" \
+  -d '{"model":"deepseek-chat","messages":[{"role":"user","content":"hi"}],"max_tokens":5}' \
+  | grep -q '"choices"' && echo "OK: LLM API 连通" || echo "FAIL: LLM API 不可达，检查 LLM_API_KEY 和网络"
 ```
 
 **常见错误**：
