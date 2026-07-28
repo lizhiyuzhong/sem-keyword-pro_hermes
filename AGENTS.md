@@ -76,6 +76,24 @@ Hermes (服务器)  → git pull → 审查 diff → 部署到 hermes-dev → �
 Hermes 负责：需求分析 / SOP 制定 / 代码审查 / 测试 / 部署
 Codex 负责：按 SOP 执行编码 / 重构 / 新功能实现
 
+## Manus 兼容性约束（修改任何代码前必读）
+
+本项目同时部署在 Manus 平台。以下内容**严禁修改或删除**：
+
+1. **OAuth 认证流程**（`server/_core/oauth.ts`, `server/_core/sdk.ts`, `server/_core/context.ts`）—— 所有 Manus OAuth 逻辑必须原样保留。`DEV_MODE` 是唯一合法的认证绕行方式，且通过环境变量开关控制，不得硬编码。
+2. **Manus Forge API 回退路径**（`server/_core/llm.ts`）—— 当 `LLM_API_KEY` 未设置时，必须回退到 `BUILT_IN_FORGE_API_KEY` 和 Manus Forge API。不要删除这个回退逻辑。
+3. **`vite-plugin-manus-runtime`** —— 保留在 `vite.config.ts` 和 `devDependencies` 中。
+4. **API 响应结构** —— 新增字段可以，但不要删除或重命名现有字段。
+
+## 提交前自检清单
+
+- [ ] `pnpm test` 通过
+- [ ] `npx tsc --noEmit` 零错误
+- [ ] `DEV_MODE=true` 下浏览器预览功能正常
+- [ ] 未修改 OAuth/Forge API 回退/Manus Runtime 相关代码
+- [ ] 新增字段为可选（`?`），不破坏旧版兼容
+- [ ] Commit message 使用规范 type（`feat:` `fix:` `refactor:` `docs:` `chore:`）
+
 ## Commit 规范
 
 Type 只能用：`feat:` `fix:` `refactor:` `docs:` `chore:`
