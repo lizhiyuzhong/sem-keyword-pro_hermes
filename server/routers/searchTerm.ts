@@ -72,10 +72,13 @@ async function analyzeSearchTermsBatch(
         break;
       } catch (err: any) {
         const msg: string = err?.message || "";
-        const isTransient = msg.includes("500") || msg.includes("502") || msg.includes("503") || msg.includes("upstream");
+        const isTimeout = err?.name === "AbortError" || msg?.includes("aborted") || msg?.includes("timeout");
+        const isUpstream = msg.includes("500") || msg.includes("502") || msg.includes("503") || msg.includes("upstream");
+        const isTransient = isTimeout || isUpstream;
         if (isTransient && attempt < MAX_NET_RETRIES) {
           const delay = (attempt + 1) * 2000;
-          console.warn(`[SearchTerm] LLM upstream error (attempt ${attempt + 1}/${MAX_NET_RETRIES + 1}), retrying in ${delay}ms...`, msg);
+          const reason = isTimeout ? "timeout" : "upstream error";
+          console.warn(`[SearchTerm] LLM ${reason} (attempt ${attempt + 1}/${MAX_NET_RETRIES + 1}), retrying in ${delay}ms...`, msg);
           await new Promise((r) => setTimeout(r, delay));
           continue;
         }

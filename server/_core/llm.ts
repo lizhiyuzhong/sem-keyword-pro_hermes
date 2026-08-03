@@ -383,7 +383,14 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
     payload.tool_choice = normalizedToolChoice;
   }
 
-  payload.max_tokens = 32768
+  // Model-aware max_tokens: DeepSeek 32768, Gemini 8192, others 16384
+  if (model.startsWith("gemini")) {
+    payload.max_tokens = 8192;
+  } else if (model.startsWith("deepseek")) {
+    payload.max_tokens = 32768;
+  } else {
+    payload.max_tokens = 16384;
+  }
 
   // Gemini-specific thinking budget — only set for Gemini models
   if (model.startsWith("gemini")) {
@@ -402,8 +409,8 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
     payload.response_format = normalizedResponseFormat;
   }
 
-  // Attempt up to 2 times with a 30-second timeout per attempt
-  const LLM_TIMEOUT_MS = 30_000;
+  // Model-aware timeout: DeepSeek 30s, Gemini 90s, others 60s
+  const LLM_TIMEOUT_MS = model.startsWith("gemini") ? 90_000 : model.startsWith("deepseek") ? 30_000 : 60_000;
   const MAX_ATTEMPTS = 2;
   let lastError: Error | null = null;
 
