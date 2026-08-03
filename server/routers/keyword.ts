@@ -83,8 +83,13 @@ async function analyzeKeywordSemantics(
   const doCall = async () => invokeLLM({ modelOverride: model, messages: [systemMsg, userMsg], response_format: respFmt });
 
   const parseResult = (response: Awaited<ReturnType<typeof invokeLLM>>): KeywordAnalysis => {
-    const content = response.choices[0]?.message?.content;
-    const parsed = typeof content === "string" ? JSON.parse(content) : JSON.parse((content as any)?.[0]?.text || "{}");
+    const rawContent = response.choices[0]?.message?.content;
+    // Defensive: handle null/undefined/empty content (e.g. Gemini web search mode)
+    const contentStr = typeof rawContent === "string" ? rawContent : (rawContent as any)?.[0]?.text || "";
+    if (!contentStr || contentStr.trim().length === 0 || contentStr === "```" || contentStr === "```json") {
+      throw new Error(`LLM returned empty or malformed content: "${String(contentStr).slice(0, 50)}"`);
+    }
+    const parsed = JSON.parse(contentStr);
     const bt = Boolean(parsed.businessTypeMatch);
     const bd = Boolean(parsed.businessDirectionMatch);
     return {

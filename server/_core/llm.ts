@@ -392,11 +392,6 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
     payload.max_tokens = 16384;
   }
 
-  // Gemini-specific thinking budget — only set for Gemini models
-  if (model.startsWith("gemini")) {
-    payload.thinking = { budget_tokens: 128 };
-  }
-
   const normalizedResponseFormat = normalizeResponseFormat({
     responseFormat,
     response_format,
