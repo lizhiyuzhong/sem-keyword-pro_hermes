@@ -194,6 +194,24 @@ function SearchTermCard({
           : "border-apple-red/20 bg-apple-red/[0.03]"
       }`}
     >
+      {/* Funnel progress bar */}
+      <div className="flex h-1 rounded-t-xl overflow-hidden">
+        {["dim1", "dim2", "dim3"].map((dim, i) => {
+          const verdict = (result as any)[dim];
+          const status = verdict?.status ?? "na";
+          return (
+            <div
+              key={dim}
+              className={`h-full transition-all duration-500 animate-funnel-fill ${
+                status === "pass" ? "bg-apple-green/60" :
+                status === "fail" ? "bg-apple-red/60" :
+                "bg-muted-foreground/15"
+              }`}
+              style={{ width: `${100 / 3}%`, animationDelay: `${i * 0.15}s` }}
+            />
+          );
+        })}
+      </div>
       {/* Header row */}
       <div className="w-full flex items-start p-4 gap-3">
         {/* Checkbox */}
@@ -484,11 +502,29 @@ export function SearchTermResults({
         </div>
       )}
 
-      {/* Loading state for first batch */}
+      {/* Loading state */}
       {isAnalyzing && results.length === 0 && (
-        <div className="flex flex-col items-center gap-3 py-12 text-muted-foreground">
+        <div className="flex flex-col items-center gap-4 py-12">
           <Loader2 className="w-8 h-8 animate-spin text-primary" />
-          <p className="text-sm">正在进行三维漏斗诊断...</p>
+          <p className="text-sm text-muted-foreground">
+            {llmProgress && llmProgress.totalLLMBatches > 0
+              ? `正在分析中... LLM ${llmProgress.completedLLMBatches}/${llmProgress.totalLLMBatches} 批`
+              : "正在准备分析..."}
+          </p>
+          {llmProgress && llmProgress.totalLLMBatches > 0 && (
+            <div className="flex items-center gap-1">
+              {llmProgress.batchStatus.map((bs: any, idx: number) => (
+                <div
+                  key={idx}
+                  className={`w-1.5 h-1.5 rounded-full transition-all duration-300 ${
+                    bs.status === "done" ? "bg-apple-green" :
+                    bs.status === "running" ? "bg-primary animate-pulse" :
+                    "bg-border"
+                  }`}
+                />
+              ))}
+            </div>
+          )}
         </div>
       )}
 

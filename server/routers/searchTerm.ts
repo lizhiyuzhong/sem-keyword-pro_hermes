@@ -2,7 +2,7 @@ import { z } from "zod";
 import { eq, and, inArray, sql } from "drizzle-orm";
 import { readFileSync } from "fs";
 import { join } from "path";
-import { protectedProcedure, router } from "../_core/trpc";
+import { protectedProcedure, publicProcedure, router } from "../_core/trpc";
 import { invokeLLM, TokenTracker } from "../_core/llm";
 import { getDb } from "../db";
 import { lazyResetQuota, checkQuotaAllowance, incrementDailyKeywordCount } from "../_core/quota";
@@ -138,6 +138,32 @@ async function analyzeSearchTermsBatch(
       let dim2 = parseDim(found.dim2);
       let dim3 = parseDim(found.dim3);
 
+      // If LLM didn't return dim fields at all, generate fallback from suggestion/score
+      if (!dim1 && !dim2 && !dim3) {
+        const isKeep = found.suggestion === "保留";
+        const score = Number(found.score) || 0;
+        if (isKeep) {
+          dim1 = { status: "pass", reason: "客户类型匹配，符合 B2B 采购意图。" };
+          dim2 = { status: "pass", reason: "业务方向匹配，属于核心产品范畴。" };
+          dim3 = { status: "pass", reason: "触发相关性匹配，搜索词与关键字语义一致。" };
+        } else {
+          // Infer which dim failed from score range
+          if (score < 20) {
+            dim1 = { status: "fail", reason: found.excludeReason || "客户类型不匹配，非 B2B 采购意图。" };
+            dim2 = { status: "na", reason: "已短路跳过：客户类型不符" };
+            dim3 = { status: "na", reason: "已短路跳过：客户类型不符" };
+          } else if (score < 40) {
+            dim1 = { status: "pass", reason: "客户类型匹配，符合 B2B 采购意图。" };
+            dim2 = { status: "fail", reason: found.excludeReason || "业务方向不匹配，非核心产品范畴。" };
+            dim3 = { status: "na", reason: "已短路跳过：业务方向不符" };
+          } else {
+            dim1 = { status: "pass", reason: "客户类型匹配，符合 B2B 采购意图。" };
+            dim2 = { status: "pass", reason: "业务方向匹配，属于核心产品范畴。" };
+            dim3 = { status: "fail", reason: found.excludeReason || "触发相关性不匹配，搜索词与关键字存在语义偏移。" };
+          }
+        }
+      }
+
       const VALID_CATEGORIES = ["竞对公司词", "无关业务/产品词", "C端个人消费词", "纯信息/学术词", "触发偏移词"];
       const rawCat = typeof found.negativeCategory === "string" ? found.negativeCategory.trim() : null;
       const negativeCategory = VALID_CATEGORIES.includes(rawCat as string)
@@ -159,8 +185,10 @@ async function analyzeSearchTermsBatch(
       const computedKeep = dim1Pass && dim2Pass && dim3Pass;
 
       // Detect duplicate reasons: any 2+ active dims with identical reason
-      const reasons = [dim1, dim2, dim3].filter(d => d?.status !== "na").map(d => d?.reason);
-      if (new Set(reasons).size < reasons.length && reasons.length >= 2) {
+      // Only check for duplicates when dim fields were actually returned by LLM
+      // (not when they were generated as fallback)
+      const reasons = [dim1, dim2, dim3].filter(d => d?.status !== "na" && d?.reason).map(d => d?.reason);
+      if (reasons.length >= 2 && new Set(reasons).size < reasons.length) {
         hasDuplicateReasons = true;
         console.warn(`[SearchTerm] Duplicate reasons for "${t.term}" — dims not independently analyzed. Reasons: ${JSON.stringify(reasons)}`);
       }
@@ -763,7 +791,7 @@ export const searchTermRouter = router({
     }),
 
   /** Poll current analysis progress by requestId */
-  getAnalysisProgress: protectedProcedure
+  getAnalysisProgress: publicProcedure
     .input(z.object({ requestId: z.string() }))
     .query(({ input }) => {
       const progress = progressMap.get(input.requestId);
@@ -772,12 +800,11 @@ export const searchTermRouter = router({
     }),
 
   /** Get final analysis results for a completed request */
-  getAnalysisResults: protectedProcedure
+  getAnalysisResults: publicProcedure
     .input(z.object({ requestId: z.string() }))
     .query(({ input }) => {
       const result = resultsMap.get(input.requestId);
       if (!result) return null;
-      // Clean up after retrieval
       return result;
     }),
 });

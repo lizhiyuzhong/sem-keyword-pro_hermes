@@ -554,7 +554,7 @@ export default function Home() {
   }, [businessDirection, businessType, keywordInput, urlClientId, analyzeMutation, startProgress]);
 
   return (
-    <div className="min-h-screen apple-gradient-bg flex flex-col">
+    <div className="min-h-screen google-bg flex flex-col">
       {/* Scene B: Save-as-client dialog */}
       <AlertDialog open={showSaveAsClientDialog} onOpenChange={setShowSaveAsClientDialog}>
         <AlertDialogContent className="max-w-md">
@@ -753,7 +753,7 @@ export default function Home() {
       <header className="w-full py-5 px-6">
         <div className="max-w-4xl mx-auto flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-[oklch(0.55_0.2_260)] to-[oklch(0.45_0.22_280)] flex items-center justify-center">
+            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-[#4285F4] to-[#3367D6] flex items-center justify-center">
               <Search className="w-4 h-4 text-white" />
             </div>
             <h1 className="text-lg font-semibold tracking-tight text-foreground">
@@ -844,11 +844,11 @@ export default function Home() {
 
         {/* Hero Section - only show when no report */}
         <AnimatePresence>
-          {!report && !analyzeMutation.isPending && (
+          {!report && !analyzeMutation.isPending && !showSearchTermResults && (
             <motion.div
               initial={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -20 }}
-              className="text-center mt-12 mb-8"
+              className="text-center mt-16 mb-10"
             >
               <motion.div
                 initial={{ opacity: 0, y: 20 }}
@@ -856,11 +856,13 @@ export default function Home() {
                 transition={{ duration: 0.6 }}
               >
                 <h2 className="text-3xl sm:text-4xl font-bold tracking-tight text-foreground mb-3">
-                  智能关键词筛选
+                  三维漏斗
+                  <span className="text-primary">精准诊断</span>
                 </h2>
-                <p className="text-muted-foreground text-base max-w-lg mx-auto leading-relaxed">
-                  基于 AI 深度语义分析，精准判断关键词与客户业务方向及受众类型的匹配度
+                <p className="text-muted-foreground text-sm max-w-md mx-auto leading-relaxed mb-6">
+                  客户类型 → 业务方向 → 触发相关性，逐层过滤，不错杀一个高价值词
                 </p>
+
               </motion.div>
             </motion.div>
           )}
@@ -871,20 +873,20 @@ export default function Home() {
           layout
           className="w-full max-w-2xl"
           animate={{
-            marginTop: formCollapsed ? "0.5rem" : report ? "0.5rem" : "0rem",
+            marginTop: (formCollapsed || showSearchTermResults) ? "0.5rem" : report ? "0.5rem" : "0rem",
           }}
           transition={{ type: "spring", stiffness: 300, damping: 30 }}
         >
           <motion.div
             layout
-            className="glass-card overflow-hidden"
+            className="google-card overflow-hidden"
             animate={{
-              padding: formCollapsed ? "0px" : "24px",
+              padding: (formCollapsed || showSearchTermResults) ? "0px" : "24px",
             }}
             transition={{ type: "spring", stiffness: 300, damping: 30 }}
           >
             {/* Collapsed header - click to expand */}
-            {formCollapsed && (
+            {(formCollapsed || showSearchTermResults) && (
               <motion.button
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
@@ -913,7 +915,7 @@ export default function Home() {
 
             {/* Expanded form */}
             <AnimatePresence>
-              {!formCollapsed && (
+              {!formCollapsed && !showSearchTermResults && (
                 <motion.div
                   initial={report ? { opacity: 0, height: 0 } : { opacity: 1 }}
                   animate={{ opacity: 1, height: "auto" }}
@@ -1097,7 +1099,7 @@ export default function Home() {
             animate={{ opacity: 1, y: 0 }}
             className="w-full max-w-2xl mt-6"
           >
-            <div className="glass-card p-6">
+            <div className="google-card p-6">
               <div className="flex items-center gap-2 mb-5">
                 <FileSearch className="w-4 h-4 text-primary" />
                 <h3 className="text-sm font-semibold text-foreground">数据清洗与预览</h3>
@@ -1141,7 +1143,7 @@ export default function Home() {
             animate={{ opacity: 1, y: 0 }}
             className="w-full max-w-2xl mt-6"
           >
-            <div className="glass-card p-6">
+            <div className="google-card p-6">
               <div className="flex items-center gap-2 mb-5">
                 <FileSearch className="w-4 h-4 text-primary" />
                 <h3 className="text-sm font-semibold text-foreground">三维漏斗诊断结果</h3>
@@ -1188,7 +1190,7 @@ export default function Home() {
               exit={{ opacity: 0, y: -20 }}
               className="mt-10 text-center"
             >
-              <div className="glass-card p-8 max-w-md mx-auto">
+              <div className="google-card p-8 max-w-md mx-auto">
                 <div className="relative w-16 h-16 mx-auto mb-5">
                   <div className="absolute inset-0 rounded-full border-2 border-primary/20" />
                   <div className="absolute inset-0 rounded-full border-2 border-primary border-t-transparent animate-spin" />
@@ -1230,7 +1232,7 @@ export default function Home() {
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: 0.3 }}
-                className="glass-card p-6"
+                className="google-card p-6"
               >
                 <div className="flex items-center justify-between mb-4">
                   <div className="flex items-center gap-2">
@@ -1294,7 +1296,7 @@ export default function Home() {
                   initial={{ opacity: 0, y: 20 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: 0.4 }}
-                  className="glass-card p-6"
+                  className="google-card p-6"
                 >
                   <div className="flex items-center justify-between mb-4">
                     <div className="flex items-center gap-2">
@@ -1377,7 +1379,7 @@ export default function Home() {
                   initial={{ opacity: 0, y: 20 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: 0.5 }}
-                  className="glass-card p-6"
+                  className="google-card p-6"
                 >
                   <div className="flex items-center justify-between mb-3">
                     <div className="flex items-center gap-2">
@@ -1490,7 +1492,7 @@ export default function Home() {
                   initial={{ opacity: 0, y: 20 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: 0.65 }}
-                  className="glass-card p-6"
+                  className="google-card p-6"
                 >
                   {/* Header */}
                   <div className="flex items-center gap-2 mb-1">

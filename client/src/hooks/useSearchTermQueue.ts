@@ -132,7 +132,7 @@ function mergeGroups(
 async function pollForResults(
   requestId: string,
   maxWaitMs = 600_000,
-  intervalMs = 2000
+  intervalMs = 1500
 ): Promise<{
   report: any;
   negativeGroups: any[];
@@ -142,26 +142,62 @@ async function pollForResults(
   error?: string;
 } | null> {
   const start = Date.now();
+  let lastLog = 0;
+  let doneRetries = 0;
+  // superjson transformer requires input wrapped as { json: { ... } }
+  const trpcInput = encodeURIComponent(JSON.stringify({ json: { requestId } }));
   while (Date.now() - start < maxWaitMs) {
     try {
-      const resp = await fetch(`/api/trpc/searchTerm.getAnalysisResults?input=${encodeURIComponent(JSON.stringify({ requestId }))}`);
-      const data = await resp.json();
-      const result = data?.result?.data?.json;
-      if (result) return result;
-      // Also check progress to see if it failed
-      const progResp = await fetch(`/api/trpc/searchTerm.getAnalysisProgress?input=${encodeURIComponent(JSON.stringify({ requestId }))}`);
-      const progData = await progResp.json();
-      const phase = progData?.result?.data?.json?.phase;
-      if (phase === "done") {
-        // Done but no results yet, wait a bit more
-        await new Promise(r => setTimeout(r, 500));
-        continue;
+      // 1. Try to get results
+      const resp = await fetch(`/api/trpc/searchTerm.getAnalysisResults?input=${trpcInput}`, {
+        credentials: "include",
+      });
+      if (!resp.ok) {
+        console.warn(`[pollForResults] getAnalysisResults HTTP ${resp.status}`);
+      } else {
+        const data = await resp.json();
+        if (data?.error) {
+          console.warn(`[pollForResults] tRPC error:`, data.error);
+        } else {
+          const result = data?.result?.data?.json;
+          if (result) return result;
+        }
       }
-    } catch {
-      // ignore polling errors
+
+      // 2. Check progress
+      const progResp = await fetch(`/api/trpc/searchTerm.getAnalysisProgress?input=${trpcInput}`, {
+        credentials: "include",
+      });
+      if (progResp.ok) {
+        const progData = await progResp.json();
+        if (progData?.error) {
+          console.warn(`[pollForResults] progress tRPC error:`, progData.error);
+        } else {
+          const prog = progData?.result?.data?.json;
+          const phase = prog?.phase;
+          if (phase === "done") {
+            doneRetries++;
+            if (doneRetries > 5) {
+              console.error(`[pollForResults] Progress is "done" but no results after 5 retries`);
+              return null;
+            }
+            await new Promise(r => setTimeout(r, 500));
+            continue;
+          }
+        }
+      }
+
+      const now = Date.now();
+      if (now - lastLog > 15000) {
+        console.log(`[pollForResults] Still waiting for ${requestId}, elapsed=${Math.round((now - start) / 1000)}s`);
+        lastLog = now;
+      }
+    } catch (err: any) {
+      console.warn(`[pollForResults] Poll error: ${err?.message || err}`);
     }
     await new Promise(r => setTimeout(r, intervalMs));
   }
+  console.error(`[pollForResults] Timed out after ${Math.round((Date.now() - start) / 1000)}s for ${requestId}`);
   return null;
 }
 
