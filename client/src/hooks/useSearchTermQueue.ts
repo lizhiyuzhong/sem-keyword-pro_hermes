@@ -125,6 +125,46 @@ function mergeGroups(
 // Hook
 // ---------------------------------------------------------------------------
 
+
+// ---------------------------------------------------------------------------
+// Poll for async analysis results
+// ---------------------------------------------------------------------------
+async function pollForResults(
+  requestId: string,
+  maxWaitMs = 600_000,
+  intervalMs = 2000
+): Promise<{
+  report: any;
+  negativeGroups: any[];
+  dailyKeywordCount: number;
+  dailyKeywordLimit: number;
+  tokenUsage: any;
+  error?: string;
+} | null> {
+  const start = Date.now();
+  while (Date.now() - start < maxWaitMs) {
+    try {
+      const resp = await fetch(`/api/trpc/searchTerm.getAnalysisResults?input=${encodeURIComponent(JSON.stringify({ requestId }))}`);
+      const data = await resp.json();
+      const result = data?.result?.data?.json;
+      if (result) return result;
+      // Also check progress to see if it failed
+      const progResp = await fetch(`/api/trpc/searchTerm.getAnalysisProgress?input=${encodeURIComponent(JSON.stringify({ requestId }))}`);
+      const progData = await progResp.json();
+      const phase = progData?.result?.data?.json?.phase;
+      if (phase === "done") {
+        // Done but no results yet, wait a bit more
+        await new Promise(r => setTimeout(r, 500));
+        continue;
+      }
+    } catch {
+      // ignore polling errors
+    }
+    await new Promise(r => setTimeout(r, intervalMs));
+  }
+  return null;
+}
+
 export interface UseSearchTermQueueReturn {
   queue: QueueState;
   initQueue: (params: {
@@ -227,7 +267,7 @@ export function useSearchTermQueue(): UseSearchTermQueueReturn {
         updateQueue((prev) => ({ ...prev, isAnalyzing: true, error: null }));
 
         try {
-          const result = await mutate({
+          const asyncResult = await mutate({
             businessDirection: current.businessDirection,
             businessType: current.businessType,
             clientId: current.clientId,
@@ -237,22 +277,37 @@ export function useSearchTermQueue(): UseSearchTermQueueReturn {
             searchTerms: batch.map((r: SearchTermRow) => ({ term: r.term, matchedKeyword: r.matchedKeyword })),
           });
 
+          // Mutation now returns { requestId, accepted: true } (async fire-and-forget)
+          const requestId = asyncResult.requestId;
+          updateQueue((prev) => ({ ...prev, requestId }));
+
+          // Poll for results until done
+          const result = await pollForResults(requestId);
+          if (!result) {
+            throw new Error("分析超时，请重试");
+          }
+          if (result.error) {
+            throw new Error(result.error);
+          }
+
+          const report = result.report;
+          const negativeGroups = result.negativeGroups;
+          const tokenUsage = result.tokenUsage;
+
           updateQueue((prev) => {
-            const newResults = [...prev.results, ...result.results];
+            const newResults = [...prev.results, ...report.results];
             const newIndex = prev.currentIndex + batch.length;
             const isDone = newIndex >= prev.totalToProcess;
             const newBatchNumber = prev.batchNumber + 1;
-            // After last batch, switch to "extracting" phase
-            const phase = isDone ? "extracting" : "analyzing";
+            const phase = isDone ? "done" : "analyzing";
 
             if (isDone && prev.clientId !== null) {
               savePageResults(prev.clientId, currentPageIndexRef.current, newResults);
             }
 
-            // Merge negative groups across batches
-            const mergedGroups = mergeGroups(prev.accumulatedNegativeGroups, (result as any).negativeGroups);
+            const mergedGroups = mergeGroups(prev.accumulatedNegativeGroups, negativeGroups);
             const totalToks = {
-              total_tokens: (prev.totalTokens?.total_tokens ?? 0) + ((result as any).tokenUsage?.total_tokens ?? 0),
+              total_tokens: (prev.totalTokens?.total_tokens ?? 0) + (tokenUsage?.total_tokens ?? 0),
             };
 
             return {
@@ -262,7 +317,7 @@ export function useSearchTermQueue(): UseSearchTermQueueReturn {
               currentIndex: newIndex,
               dailyKeywordCount: result.dailyKeywordCount ?? prev.dailyKeywordCount,
               dailyKeywordLimit: result.dailyKeywordLimit ?? prev.dailyKeywordLimit,
-              lastSkippedCount: result.skippedCount ?? 0,
+              lastSkippedCount: report.skippedCount ?? 0,
               accumulatedNegativeGroups: mergedGroups,
               totalTokens: totalToks,
               batchNumber: newBatchNumber,

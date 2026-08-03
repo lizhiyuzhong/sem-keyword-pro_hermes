@@ -430,6 +430,16 @@ interface AnalysisProgress {
 
 const progressMap = new Map<string, AnalysisProgress>();
 
+/** Stores final analysis results keyed by requestId */
+const resultsMap = new Map<string, {
+  report: any;
+  negativeGroups: any[];
+  dailyKeywordCount: number;
+  dailyKeywordLimit: number;
+  tokenUsage: any;
+  error?: string;
+}>();
+
 function setProgress(requestId: string, update: Partial<AnalysisProgress>) {
   const existing = progressMap.get(requestId);
   if (existing) {
@@ -460,160 +470,124 @@ setInterval(() => {
 // ---------------------------------------------------------------------------
 // tRPC router
 // ---------------------------------------------------------------------------
-export const searchTermRouter = router({
-  analyzeSearchTerms: protectedProcedure
-    .input(
-      z.object({
-        businessDirection: z.string().min(1, "请输入客户业务方向").max(500),
-        businessType: z.enum(["B2B", "B2C"]),
-        /** Must be bound to a client profile for L2 dedup */
-        clientId: z.number().int().positive(),
-        /** Batch of search terms with their matched keywords */
-        searchTerms: z
-          .array(
-            z.object({
-              term: z.string().min(1).max(500),
-              matchedKeyword: z.string().min(1).max(500),
-            })
-          )
-          .min(1, "请至少提供一个搜索字词")
-          .max(100, "单次最多分析 100 个搜索字词"),
-        /** Per-request model override */
-        model: z.string().optional(),
-        /** Skip history cache, force fresh LLM analysis */
-        forceRefresh: z.boolean().optional().default(false),
-        /** Request ID for progress tracking (auto-generated if not provided) */
-        requestId: z.string().optional(),
-      })
-    )
-    .mutation(async ({ ctx, input }) => {
-      const { businessDirection, businessType, clientId, searchTerms } = input;
-      const { model, forceRefresh, requestId: inputRequestId } = input;
-      const requestId = inputRequestId || `req_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 
-      // Fetch client name for brand-aware analysis
-      let clientBrand = businessDirection; // fallback
-      try {
-        const db = await getDb();
-        if (db) {
-          const [client] = await db.select({ name: clients.name }).from(clients).where(eq(clients.id, clientId)).limit(1);
-          if (client?.name) clientBrand = client.name;
-        }
-      } catch { /* best-effort: fallback to businessDirection */ }
+// ---------------------------------------------------------------------------
+// Background async processing (spawned from analyzeSearchTerms mutation)
+// ---------------------------------------------------------------------------
+async function processSearchTermsAsync(params: {
+  businessDirection: string;
+  businessType: "B2B" | "B2C";
+  clientId: number;
+  searchTerms: Array<{ term: string; matchedKeyword: string }>;
+  model?: string;
+  forceRefresh?: boolean;
+  requestId: string;
+  userId: number;
+  currentUser: any;
+}): Promise<{
+  report: SearchTermReport;
+  negativeGroups: any[];
+  dailyKeywordCount: number;
+  dailyKeywordLimit: number;
+  tokenUsage: any;
+}> {
+  const { businessDirection, businessType, clientId, searchTerms, model, forceRefresh, requestId, userId, currentUser } = params;
 
-      // Reset token tracker for this request
-      TokenTracker.reset();
+  // Fetch client name for brand-aware analysis
+  let clientBrand = businessDirection;
+  try {
+    const db = await getDb();
+    if (db) {
+      const [client] = await db.select({ name: clients.name }).from(clients).where(eq(clients.id, clientId)).limit(1);
+      if (client?.name) clientBrand = client.name;
+    }
+  } catch { /* best-effort */ }
 
-      // Deduplicate input by composite key
-      const seen = new Set<string>();
-      const cleanTerms = searchTerms.filter((t) => {
-        const key = makeHistoryKey(t.term, t.matchedKeyword);
-        if (seen.has(key)) return false;
-        seen.add(key);
-        return t.term.trim().length > 0;
-      });
+  // Reset token tracker
+  TokenTracker.reset();
 
-      // -----------------------------------------------------------------------
-      // Quota Management
-      // -----------------------------------------------------------------------
-      let currentUser = ctx.user;
-      currentUser = await lazyResetQuota(currentUser);
-      const quotaCheck = checkQuotaAllowance(currentUser, cleanTerms.length);
-      if (!quotaCheck.allowed) {
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: quotaCheck.message || "已达单日否词分析上限",
-        });
-      }
+  // Deduplicate input
+  const seen = new Set<string>();
+  const cleanTerms = searchTerms.filter((t) => {
+    const key = makeHistoryKey(t.term, t.matchedKeyword);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return t.term.trim().length > 0;
+  });
 
-      // -----------------------------------------------------------------------
-      // L2 Dedup: load history (skip if forceRefresh)
-      // -----------------------------------------------------------------------
-      const historyMap = forceRefresh ? new Map() : await getSearchTermHistory(clientId, cleanTerms.map(t => t.term));
-      const termsToAnalyze = forceRefresh
-        ? cleanTerms
-        : cleanTerms.filter((t) => !historyMap.has(makeHistoryKey(t.term, t.matchedKeyword)));
-      const skippedCount = forceRefresh ? 0 : cleanTerms.length - termsToAnalyze.length;
+  // L2 Dedup: load history
+  const historyMap = forceRefresh ? new Map() : await getSearchTermHistory(clientId, cleanTerms.map(t => t.term));
+  const termsToAnalyze = forceRefresh
+    ? cleanTerms
+    : cleanTerms.filter((t) => !historyMap.has(makeHistoryKey(t.term, t.matchedKeyword)));
+  const skippedCount = forceRefresh ? 0 : cleanTerms.length - termsToAnalyze.length;
 
-      console.log(
-        `[SearchTermDedup] Client ${clientId}: ${cleanTerms.length} total, ${skippedCount} cached, ${termsToAnalyze.length} new`
-      );
+  console.log(
+    `[SearchTermDedup] Client ${clientId}: ${cleanTerms.length} total, ${skippedCount} cached, ${termsToAnalyze.length} new`
+  );
 
-      // LLM batch config
-      const LLM_BATCH = 10;
-      const CONCURRENCY = 3;
+  const LLM_BATCH = 10;
+  const CONCURRENCY = 3;
+  const totalLLMBatches = Math.ceil(termsToAnalyze.length / LLM_BATCH);
 
-      // Initialize progress tracking
-      const totalLLMBatches = Math.ceil(termsToAnalyze.length / LLM_BATCH);
-      setProgress(requestId, {
-        phase: "analyzing",
-        totalTerms: termsToAnalyze.length,
-        analyzedTerms: 0,
-        totalLLMBatches,
-        completedLLMBatches: 0,
-        batchStatus: Array.from({ length: totalLLMBatches }, (_, i) => ({ index: i, status: "pending" as const })),
-      });
+  setProgress(requestId, {
+    phase: "analyzing",
+    totalTerms: termsToAnalyze.length,
+    analyzedTerms: 0,
+    totalLLMBatches,
+    completedLLMBatches: 0,
+    batchStatus: Array.from({ length: totalLLMBatches }, (_, i) => ({ index: i, status: "pending" as const })),
+  });
 
-      // -----------------------------------------------------------------------
-      // LLM analysis: batches of 10, 2 concurrent for speed
-      // -----------------------------------------------------------------------
-      const freshResults: SearchTermAnalysis[] = [];
+  // LLM analysis
+  const freshResults: SearchTermAnalysis[] = [];
+  let llmBatchIndex = 0;
+  for (let i = 0; i < termsToAnalyze.length; i += LLM_BATCH * CONCURRENCY) {
+    const concurrentBatches: Array<typeof termsToAnalyze> = [];
+    const batchIndices: number[] = [];
+    for (let j = 0; j < CONCURRENCY && i + j * LLM_BATCH < termsToAnalyze.length; j++) {
+      concurrentBatches.push(termsToAnalyze.slice(i + j * LLM_BATCH, i + (j + 1) * LLM_BATCH));
+      batchIndices.push(llmBatchIndex + j);
+    }
 
-      let llmBatchIndex = 0;
-      for (let i = 0; i < termsToAnalyze.length; i += LLM_BATCH * CONCURRENCY) {
-        const concurrentBatches: Array<typeof termsToAnalyze> = [];
-        const batchIndices: number[] = [];
-        for (let j = 0; j < CONCURRENCY && i + j * LLM_BATCH < termsToAnalyze.length; j++) {
-          concurrentBatches.push(termsToAnalyze.slice(i + j * LLM_BATCH, i + (j + 1) * LLM_BATCH));
-          batchIndices.push(llmBatchIndex + j);
-        }
+    for (const idx of batchIndices) {
+      const status = progressMap.get(requestId)?.batchStatus;
+      if (status && status[idx]) status[idx] = { index: idx, status: "running" };
+    }
+    setProgress(requestId, {
+      analyzedTerms: i,
+      completedLLMBatches: llmBatchIndex,
+    });
 
-        // Mark concurrent batches as running
-        for (const idx of batchIndices) {
-          const status = progressMap.get(requestId)?.batchStatus;
-          if (status && status[idx]) status[idx] = { index: idx, status: "running" };
-        }
-        setProgress(requestId, {
-          analyzedTerms: i,
-          completedLLMBatches: llmBatchIndex,
-        });
+    const batchResults = await Promise.all(
+      concurrentBatches.map(batch =>
+        analyzeSearchTermsBatch(batch, businessDirection, businessType, clientBrand, model)
+      )
+    );
+    freshResults.push(...batchResults.flat());
 
-        const batchResults = await Promise.all(
-          concurrentBatches.map(batch =>
-            analyzeSearchTermsBatch(batch, businessDirection, businessType, clientBrand, model)
-          )
-        );
-        freshResults.push(...batchResults.flat());
+    for (const idx of batchIndices) {
+      const status = progressMap.get(requestId)?.batchStatus;
+      if (status && status[idx]) status[idx] = { index: idx, status: "done" };
+    }
+    llmBatchIndex += concurrentBatches.length;
+    setProgress(requestId, {
+      analyzedTerms: Math.min(i + LLM_BATCH * CONCURRENCY, termsToAnalyze.length),
+      completedLLMBatches: llmBatchIndex,
+    });
+  }
 
-        // Mark concurrent batches as done
-        for (const idx of batchIndices) {
-          const status = progressMap.get(requestId)?.batchStatus;
-          if (status && status[idx]) status[idx] = { index: idx, status: "done" };
-        }
-        llmBatchIndex += concurrentBatches.length;
-        setProgress(requestId, {
-          analyzedTerms: Math.min(i + LLM_BATCH * CONCURRENCY, termsToAnalyze.length),
-          completedLLMBatches: llmBatchIndex,
-        });
-      }
+  // Extract negatives
+  setProgress(requestId, { phase: "extracting" });
+  const negativeGroups = await extractSearchTermNegatives(
+    freshResults.filter(r => r.suggestion === "排除"),
+    businessDirection,
+    businessType,
+    clientBrand,
+    model
+  );
 
-      // -----------------------------------------------------------------------
-      // Post-analysis: extract high-level negative keyword groups via LLM
-      // -----------------------------------------------------------------------
-      setProgress(requestId, { phase: "extracting" });
-      const negativeGroups = await extractSearchTermNegatives(
-        freshResults.filter(r => r.suggestion === "排除"),
-        businessDirection,
-        businessType,
-        clientBrand,
-        model
-      );
-
-      // -----------------------------------------------------------------------
-      // Merge: historical + fresh, preserving input order
-      // -----------------------------------------------------------------------
-
-      /** Ensure excludeReason is always a non-empty Chinese string and dim fields are populated */
+  // Merge: historical + fresh
       function sanitizeReason(result: SearchTermAnalysis): SearchTermAnalysis {
         const isKeep = result.suggestion === "保留";
         let reason = (typeof result.excludeReason === "string" ? result.excludeReason : "").trim();
@@ -663,6 +637,8 @@ export const searchTermRouter = router({
         return { ...result, excludeReason: reason, dim1, dim2, dim3, negativeCategory };
       }
 
+
+
       const allResults: SearchTermAnalysis[] = cleanTerms.map((t) => {
         const histKey = makeHistoryKey(t.term, t.matchedKeyword);
         const fromHistory = historyMap.get(histKey);
@@ -674,39 +650,116 @@ export const searchTermRouter = router({
         return fresh ? sanitizeReason(fresh) : null;
       }).filter(Boolean) as SearchTermAnalysis[];
 
-      // -----------------------------------------------------------------------
-      // Persist fresh results to history (async, non-blocking)
-      // -----------------------------------------------------------------------
-      void saveSearchTermHistory(clientId, freshResults);
+  // Persist fresh results
+  void saveSearchTermHistory(clientId, freshResults);
 
-      // -----------------------------------------------------------------------
-      // Quota: increment by actual new terms analyzed
-      // -----------------------------------------------------------------------
-      const newCount = await incrementDailyKeywordCount(ctx.user.id, termsToAnalyze.length);
-      console.log(
-        `[Quota] User ${ctx.user.id}: incremented by ${termsToAnalyze.length}, new count: ${newCount}`
-      );
+  // Quota
+  const newCount = await incrementDailyKeywordCount(userId, termsToAnalyze.length);
+  console.log(`[Quota] User ${userId}: incremented by ${termsToAnalyze.length}, new count: ${newCount}`);
 
-      const report: SearchTermReport = {
-        businessDirection,
-        businessType,
-        results: allResults,
-        totalCount: cleanTerms.length,
-        skippedCount,
-        analyzedAt: Date.now(),
-      };
+  const report: SearchTermReport = {
+    businessDirection,
+    businessType,
+    results: allResults,
+    totalCount: cleanTerms.length,
+    skippedCount,
+    analyzedAt: Date.now(),
+  };
 
-      const tokenUsage = TokenTracker.getTotal();
-      TokenTracker.log(`searchTerm.analyze | ${cleanTerms.length} terms`);
+  const tokenUsage = TokenTracker.getTotal();
+  TokenTracker.log(`searchTerm.analyze | ${cleanTerms.length} terms`);
 
-      setProgress(requestId, { phase: "done" });
-      return {
-        ...report,
-        negativeGroups,
-        dailyKeywordCount: newCount >= 0 ? newCount : currentUser.daily_keyword_count,
-        dailyKeywordLimit: currentUser.daily_keyword_limit,
-        tokenUsage,
-      };
+  return {
+    report,
+    negativeGroups,
+    dailyKeywordCount: newCount >= 0 ? newCount : currentUser.daily_keyword_count,
+    dailyKeywordLimit: currentUser.daily_keyword_limit,
+    tokenUsage,
+  };
+}
+
+export const searchTermRouter = router({
+  analyzeSearchTerms: protectedProcedure
+    .input(
+      z.object({
+        businessDirection: z.string().min(1, "请输入客户业务方向").max(500),
+        businessType: z.enum(["B2B", "B2C"]),
+        /** Must be bound to a client profile for L2 dedup */
+        clientId: z.number().int().positive(),
+        /** Batch of search terms with their matched keywords */
+        searchTerms: z
+          .array(
+            z.object({
+              term: z.string().min(1).max(500),
+              matchedKeyword: z.string().min(1).max(500),
+            })
+          )
+          .min(1, "请至少提供一个搜索字词")
+          .max(100, "单次最多分析 100 个搜索字词"),
+        /** Per-request model override */
+        model: z.string().optional(),
+        /** Skip history cache, force fresh LLM analysis */
+        forceRefresh: z.boolean().optional().default(false),
+        /** Request ID for progress tracking (auto-generated if not provided) */
+        requestId: z.string().optional(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { businessDirection, businessType, clientId, searchTerms } = input;
+      const { model, forceRefresh, requestId: inputRequestId } = input;
+      const requestId = inputRequestId || `req_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+
+      // Quick validation
+      let currentUser = ctx.user;
+      currentUser = await lazyResetQuota(currentUser);
+      const quotaCheck = checkQuotaAllowance(currentUser, searchTerms.length);
+      if (!quotaCheck.allowed) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: quotaCheck.message || "已达单日否词分析上限",
+        });
+      }
+
+      // Initialize progress
+      setProgress(requestId, {
+        phase: "analyzing",
+        totalTerms: searchTerms.length,
+        analyzedTerms: 0,
+        totalLLMBatches: Math.ceil(searchTerms.length / 10),
+        completedLLMBatches: 0,
+        batchStatus: Array.from({ length: Math.ceil(searchTerms.length / 10) }, (_, i) => ({ index: i, status: "pending" as const })),
+      });
+
+      // Fire-and-forget: spawn background processing
+      void (async () => {
+        try {
+          const result = await processSearchTermsAsync({
+            businessDirection,
+            businessType,
+            clientId,
+            searchTerms,
+            model,
+            forceRefresh,
+            requestId,
+            userId: ctx.user.id,
+            currentUser,
+          });
+          resultsMap.set(requestId, { ...result, error: undefined });
+        } catch (err: any) {
+          console.error(`[SearchTerm] Background processing failed for ${requestId}:`, err?.message);
+          resultsMap.set(requestId, {
+            report: { businessDirection, businessType, results: [], totalCount: 0, skippedCount: 0, analyzedAt: Date.now() },
+            negativeGroups: [],
+            dailyKeywordCount: 0,
+            dailyKeywordLimit: 0,
+            tokenUsage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
+            error: err?.message || "分析失败",
+          });
+        }
+        setProgress(requestId, { phase: "done" });
+      })();
+
+      return { requestId, accepted: true };
     }),
 
   /** Poll current analysis progress by requestId */
@@ -716,5 +769,15 @@ export const searchTermRouter = router({
       const progress = progressMap.get(input.requestId);
       if (!progress) return { phase: "done" as const, totalTerms: 0, analyzedTerms: 0, totalLLMBatches: 0, completedLLMBatches: 0, batchStatus: [] };
       return progress;
+    }),
+
+  /** Get final analysis results for a completed request */
+  getAnalysisResults: protectedProcedure
+    .input(z.object({ requestId: z.string() }))
+    .query(({ input }) => {
+      const result = resultsMap.get(input.requestId);
+      if (!result) return null;
+      // Clean up after retrieval
+      return result;
     }),
 });

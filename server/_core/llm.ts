@@ -410,7 +410,7 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
   }
 
   // Model-aware timeout: DeepSeek 30s, Gemini 90s, others 60s
-  const LLM_TIMEOUT_MS = model.startsWith("gemini") ? 90_000 : model.startsWith("deepseek") ? 30_000 : 60_000;
+  const LLM_TIMEOUT_MS = model.startsWith("gemini") ? 90_000 : model.startsWith("deepseek") ? 60_000 : 60_000;
   const MAX_ATTEMPTS = 2;
   let lastError: Error | null = null;
 
